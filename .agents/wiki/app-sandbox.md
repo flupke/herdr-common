@@ -33,8 +33,10 @@ port of its loopback through `AppSandbox::forward` (`forward.rs`).
   tools listen on.
 - Each connection runs socat under nsenter, so an app whose tests forward needs `socat` on its
   dev shell's `PATH`, beside bubblewrap and nsenter.
-- `io::copy` from a `TcpStream` to a pipe splices, and a blocking splice from a TCP socket
-  waits for its whole length or the socket's end: a forward copies through a buffer instead.
+- A relay's standard input is one end of a socket pair, which socat reads as `FD:0,shut-down`.
+  With pipes, or with `STDIO` even on a socket, socat never passes on the end of a server that
+  closes first (HTTP's `Connection: close`) until its input ends: the host's client, which
+  cannot half-close, waits for an answer's end until socat's `-t`.
 
 ## Gotchas
 

@@ -6,10 +6,10 @@
 
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{Child, ChildStderr, Stdio};
 
 use app_sandbox::{AppSandbox, Isolation, Options, Programs};
 
@@ -140,45 +140,77 @@ fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme_or_the_caller_s_br
 #[test]
 fn reaches_a_port_of_the_bubblewrap_loopback_through_a_forward_until_it_stops() {
     let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &Options::default()).unwrap();
-    let port = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    // An echo server inside, which says on standard error once it listens.
-    let listen = format!("TCP-LISTEN:{port},bind=127.0.0.1");
-    let mut server = sandbox
-        .command(Path::new("socat"))
-        .args(["-d", "-d", &listen, "EXEC:cat"])
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    // Kept open to the end: socat dies of a write to a closed pipe.
-    let mut said = BufReader::new(server.stderr.take().unwrap()).lines();
-    let listening = said
-        .by_ref()
-        .map_while(Result::ok)
-        .any(|line| line.contains(&format!("listening on AF=2 127.0.0.1:{port}")));
-    assert!(listening, "the server inside never listened");
+    let mut echoing = Server::inside(&sandbox, "EXEC:cat");
     assert!(
-        TcpStream::connect(("127.0.0.1", port)).is_err(),
+        TcpStream::connect(("127.0.0.1", echoing.port)).is_err(),
         "the host reached the sandbox's loopback without a forward"
     );
 
-    sandbox.forward(port).unwrap();
+    sandbox.forward(echoing.port).unwrap();
     // Again, as a test does that forwards each port it reads: the forward stays.
-    sandbox.forward(port).unwrap();
-    let mut connection = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    sandbox.forward(echoing.port).unwrap();
+    // A client that closes first, its request sent: it still reads the whole answer.
+    let mut connection = TcpStream::connect(("127.0.0.1", echoing.port)).unwrap();
     connection.write_all(b"ping").unwrap();
-    let mut echoed = [0; 4];
-    connection.read_exact(&mut echoed).unwrap();
-    assert_eq!(&echoed, b"ping");
-    drop(connection);
+    connection.shutdown(Shutdown::Write).unwrap();
+    let mut echoed = String::new();
+    connection.read_to_string(&mut echoed).unwrap();
+    assert_eq!(echoed, "ping");
+
+    // A server that closes once it answered, as an HTTP server does: the host reads the end
+    // while its side stays open, as a client that cannot half-close keeps it.
+    let mut answering = Server::inside(&sandbox, "SYSTEM:read request; echo answer to $request");
+    sandbox.forward(answering.port).unwrap();
+    let mut connection = TcpStream::connect(("127.0.0.1", answering.port)).unwrap();
+    connection.write_all(b"ping\n").unwrap();
+    let mut answer = String::new();
+    connection.read_to_string(&mut answer).unwrap();
+    assert_eq!(answer, "answer to ping\n");
 
     sandbox.stop().unwrap();
-    server.wait().unwrap();
-    assert!(
-        TcpStream::connect(("127.0.0.1", port)).is_err(),
-        "the forward outlived the sandbox"
-    );
+    for server in [&mut echoing, &mut answering] {
+        server.process.wait().unwrap();
+        assert!(
+            TcpStream::connect(("127.0.0.1", server.port)).is_err(),
+            "the forward outlived the sandbox"
+        );
+    }
+}
+
+/// A socat server inside the sandbox, on a port free on the host.
+struct Server {
+    port: u16,
+    process: Child,
+    /// Kept open to the end: socat dies of a write to a closed pipe.
+    _said: ChildStderr,
+}
+
+impl Server {
+    /// Listen on the sandbox's loopback, and run socat's `address` for each connection; return
+    /// once it listens.
+    fn inside(sandbox: &AppSandbox, address: &str) -> Self {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let listen = format!("TCP-LISTEN:{port},bind=127.0.0.1");
+        let mut process = sandbox
+            .command(Path::new("socat"))
+            .args(["-d", "-d", &listen, address])
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut said = BufReader::new(process.stderr.take().unwrap());
+        let listening = (&mut said)
+            .lines()
+            .map_while(Result::ok)
+            .any(|line| line.contains(&format!("listening on AF=2 127.0.0.1:{port}")));
+        assert!(listening, "the server inside never listened");
+        Self {
+            port,
+            process,
+            _said: said.into_inner(),
+        }
+    }
 }

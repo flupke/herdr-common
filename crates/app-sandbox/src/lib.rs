@@ -491,8 +491,15 @@ impl AppSandbox {
         let forward = Forward::start(port, move || {
             let mut relay = entry.command(&socat, &home, &environment);
             // Once one side closes, socat waits this long for the other side's end, half a
-            // second by default: a request whose client half-closes keeps its answer.
-            relay.args(["-t", "3600", "STDIO", &format!("TCP4:127.0.0.1:{port}")]);
+            // second by default: a request whose client half-closes keeps its answer. Its
+            // standard input is a socket, which `shut-down` shuts down rather than closes, as
+            // the forward expects.
+            relay.args([
+                "-t",
+                "3600",
+                "FD:0,shut-down",
+                &format!("TCP4:127.0.0.1:{port}"),
+            ]);
             relay
         })?;
         forwards.push(forward);
