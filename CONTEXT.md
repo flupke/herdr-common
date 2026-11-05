@@ -29,3 +29,10 @@ never touch them.
 An agent running an app's Herdr screen in a private Herdr or herdr-app, seeing it through
 screenshots and acting on it through commands, as the app's user would.
 _Avoid_: e2e (an e2e test may check without seeing)
+
+**App sandbox**:
+A private herdr-app on a headless display (`crates/app-sandbox`): the pinned herdr-app and hc,
+with their own `HERDR_APP_HOME`, `HC_SESSION`, XDG directories and Weston display, which never
+shows on the user's display nor takes their focus. In bubblewrap by default, or plain where
+bubblewrap cannot run.
+_Avoid_: private app, test app
