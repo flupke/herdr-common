@@ -1,6 +1,8 @@
 //! A vision session: an app sandbox, seen through its terminals' screens and its window's
 //! pixels, and driven through its display as its user would drive it.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use app_sandbox::{AppSandbox, Restart, Stopped};
@@ -11,7 +13,7 @@ use vision_display::Display;
 use vision_signal::acknowledgement_request;
 
 use crate::frames::{FrameWatch, Stalled};
-use crate::screen::numbered;
+use crate::screen::{changed_rows, numbered};
 
 /// The title of herdr-app's window.
 const WINDOW_TITLE: &str = "Herdr";
@@ -30,12 +32,12 @@ const ACKNOWLEDGEMENT_GUARD: Duration = Duration::from_secs(30);
 /// before it returns the screen as it is: an action may change nothing.
 const CHANGE_GUARD: Duration = Duration::from_secs(1);
 
-/// How long such an action then waits for the pixels to stay unchanged for [`SETTLE_QUIET`],
+/// How long such an action then waits for the pixels to stay unchanged for [`QUIET`],
 /// before it returns the screen as it is: an animation never settles.
-const SETTLE_GUARD: Duration = Duration::from_secs(2);
+const QUIET_GUARD: Duration = Duration::from_secs(2);
 
 /// How long the pixels must stay unchanged to count as settled.
-const SETTLE_QUIET: Duration = Duration::from_millis(250);
+const QUIET: Duration = Duration::from_millis(250);
 
 /// How often a screen that sends no event is looked at again: the window's pixels, or the text
 /// of a terminal whose program does not speak vision-signal.
@@ -66,7 +68,7 @@ pub enum Input<'a> {
     },
 }
 
-/// How the app showed it reacted to an input.
+/// How the app showed it reacted to an input, or to a change [`Vision::settle`] waited on.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reaction {
@@ -89,6 +91,10 @@ pub struct Screen {
     /// The visible rows, one line each.
     #[serde(skip)]
     pub text: String,
+    /// The zero-based rows whose text differs from the previous screen of this terminal the
+    /// session returned; `None` for the first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changed_rows: Option<Vec<usize>>,
 }
 
 impl Screen {
@@ -111,6 +117,9 @@ pub struct Vision {
     frames: FrameWatch,
     /// The latest acknowledgement request sent.
     requests: u64,
+    /// The text of the latest screen of each terminal the session returned, by its address:
+    /// behind a lock, so that a read takes `&self`.
+    returned: Mutex<HashMap<String, String>>,
 }
 
 impl Vision {
@@ -124,6 +133,7 @@ impl Vision {
             sandbox,
             frames,
             requests: 0,
+            returned: Mutex::default(),
         })
     }
 
@@ -155,7 +165,7 @@ impl Vision {
             Restart::Window => self.display = Some(connect(&self.sandbox)?),
         }
         // A kept terminal may still show the core lost for a moment.
-        settle(self.display()?)?;
+        quiet(self.display()?)?;
         Ok(())
     }
 
@@ -187,8 +197,28 @@ impl Vision {
         }
     }
 
-    /// The screen of `terminal`, or of the focused one, as it is now.
+    /// The screen of `terminal`, or of the focused one, as it is now, with the rows that
+    /// changed since the session last returned one of this terminal.
     pub fn screen(&self, terminal: Option<&str>) -> Result<Screen> {
+        let screen = self.read(terminal)?;
+        Ok(self.returned(screen))
+    }
+
+    /// `screen`, which the session returns: its rows that changed since the previous one of
+    /// its terminal.
+    fn returned(&self, mut screen: Screen) -> Screen {
+        screen.changed_rows = self
+            .returned
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(screen.terminal.clone(), screen.text.clone())
+            .map(|before| changed_rows(&before, &screen.text));
+        screen
+    }
+
+    /// The screen of `terminal`, or of the focused one, as it is now, which the session may
+    /// not return.
+    fn read(&self, terminal: Option<&str>) -> Result<Screen> {
         let terminal = self.terminal(terminal)?;
         // The marker comes first: the screen read after it holds that frame at least.
         let frame = self
@@ -205,6 +235,7 @@ impl Vision {
             terminal,
             frame,
             text,
+            changed_rows: None,
         })
     }
 
@@ -214,11 +245,42 @@ impl Vision {
     /// window's pixels changed and settled. Returns the focused terminal's screen then, if a
     /// terminal has the focus.
     pub fn act(&mut self, input: &Input<'_>) -> Result<(Reaction, Option<Screen>)> {
+        self.react(Some(input))
+    }
+
+    /// Wait for the app to show a change no input of the session made, such as keys an app's
+    /// own tools send its terminal, and return the focused terminal's screen then, if a
+    /// terminal has the focus. When its program speaks vision-signal, the reaction is the frame
+    /// that acknowledges a request pasted now, and no other part of the window is waited on
+    /// (as [`Self::settle_pixels`] does):
+    /// the program reads the request after what reached its terminal before, and shows a
+    /// change it learns another way (a socket, a file) only if it handled it before. Otherwise,
+    /// and while a held drag keeps the button down, the window's pixels must change within a
+    /// second, then stay quiet: `changed: false` says the window showed the change before the
+    /// call, or never did. [`Self::settle_pixels`] waits on the whole window.
+    pub fn settle(&mut self) -> Result<(Reaction, Option<Screen>)> {
+        self.react(None)
+    }
+
+    /// [`Self::settle`] on the whole window's pixels, whatever has the focus: for a change
+    /// outside the focused terminal, such as one an app's own tools make to herdr-app's panels
+    /// or to another pane, or one a vision-signal program learns another way than its terminal.
+    pub fn settle_pixels(&mut self) -> Result<(Reaction, Option<Screen>)> {
+        let before = self.display()?.fingerprint()?;
+        let reaction = self.pixels(before)?;
+        Ok((reaction, self.focused_screen()?))
+    }
+
+    /// Give `input`, if any, and wait for the app's reaction.
+    fn react(&mut self, input: Option<&Input<'_>>) -> Result<(Reaction, Option<Screen>)> {
+        // First: a change the window shows during the focus queries still counts.
+        let before = self.display()?.fingerprint()?;
         let speaking = self
             .focused_terminal()?
             .filter(|terminal| self.frames.frames().latest(terminal).is_some());
-        let before = self.display()?.fingerprint()?;
-        self.give(input)?;
+        if let Some(input) = input {
+            self.give(input)?;
+        }
         // An input that moved the focus, such as a click on another pane, leaves the request
         // nobody to read it. The paste key would leave a held drag on herdr-app's panels unable
         // to drop.
@@ -235,11 +297,15 @@ impl Vision {
             Some(reaction) => reaction,
             None => self.pixels(before)?,
         };
-        let screen = match self.focused_terminal()? {
-            Some(terminal) => Some(self.screen(Some(&terminal))?),
-            None => None,
-        };
-        Ok((reaction, screen))
+        Ok((reaction, self.focused_screen()?))
+    }
+
+    /// The focused terminal's screen, if a terminal has the focus.
+    fn focused_screen(&self) -> Result<Option<Screen>> {
+        match self.focused_terminal()? {
+            Some(terminal) => Ok(Some(self.screen(Some(&terminal))?)),
+            None => Ok(None),
+        }
     }
 
     fn give(&self, input: &Input<'_>) -> Result<()> {
@@ -276,7 +342,7 @@ impl Vision {
                 frame: marker.frame,
             })),
             Err(Stalled::Left) => Ok(None),
-            Err(error) => bail!("{terminal} did not acknowledge the input: {error}"),
+            Err(error) => bail!("{terminal} did not acknowledge request {request}: {error}"),
         }
     }
 
@@ -293,7 +359,7 @@ impl Vision {
             }
             std::thread::sleep(SCREEN_POLL);
         };
-        let settled = settle(display)?;
+        let settled = quiet(display)?;
         Ok(Reaction::Pixels { changed, settled })
     }
 
@@ -312,12 +378,13 @@ impl Vision {
         let terminal = self.terminal(terminal)?;
         let deadline = Instant::now() + guard;
         loop {
-            let screen = self.screen(Some(&terminal))?;
+            let screen = self.read(Some(&terminal))?;
             if screen.text.contains(text) != absent {
-                return Ok(screen);
+                return Ok(self.returned(screen));
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
+                let screen = self.returned(screen);
                 bail!(
                     "{terminal} {} {text:?} after {guard:?}; its screen:\n{}",
                     if absent {
@@ -340,10 +407,11 @@ impl Vision {
                         Ok(_) | Err(Stalled::Guard(_) | Stalled::Left) => {}
                         Err(stalled) => {
                             // What it printed as it ended shows with no frame.
-                            let last = self.screen(Some(&terminal))?;
+                            let last = self.read(Some(&terminal))?;
                             if last.text.contains(text) != absent {
-                                return Ok(last);
+                                return Ok(self.returned(last));
                             }
+                            let last = self.returned(last);
                             bail!(
                                 "{terminal} paints no more frames ({stalled}); its screen:\n{}",
                                 last.numbered()
@@ -377,14 +445,14 @@ impl Vision {
     }
 }
 
-/// Wait for the window's pixels to stay unchanged for [`SETTLE_QUIET`], for at most
-/// [`SETTLE_GUARD`]: whether they did.
-fn settle(display: &Display) -> Result<bool> {
-    let deadline = Instant::now() + SETTLE_GUARD;
+/// Wait for the window's pixels to stay unchanged for [`QUIET`], for at most
+/// [`QUIET_GUARD`]: whether they did.
+fn quiet(display: &Display) -> Result<bool> {
+    let deadline = Instant::now() + QUIET_GUARD;
     let mut last = display.fingerprint()?;
     let mut since = Instant::now();
     loop {
-        if since.elapsed() >= SETTLE_QUIET {
+        if since.elapsed() >= QUIET {
             return Ok(true);
         }
         if Instant::now() >= deadline {

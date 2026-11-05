@@ -3,9 +3,9 @@
 //!
 //! An app's MCP server starts a [`Vision`] session on an [`app_sandbox::AppSandbox`] it set up,
 //! puts it in [`VisionTools::session`], and routes the vision tools with its own
-//! ([`VisionTools::router`]): screen, screenshot, key, type, click, drag and `wait_for`. An app
-//! whose terminal program links `vision-signal` gets each action's reaction from its frames;
-//! any other app, from its window's pixels.
+//! ([`VisionTools::router`]): screen, screenshot, key, type, click, drag, settle and `wait_for`.
+//! An app whose terminal program links `vision-signal` gets each action's reaction from its
+//! frames; any other app, from its window's pixels.
 
 mod frames;
 mod screen;

@@ -1,6 +1,6 @@
 //! The vision tools, which an app's MCP server takes in beside its own: screen, screenshot,
-//! key, type, click, drag and `wait_for`. Every tool that acts returns once the app reacted, and
-//! every mistake is an error result the agent reads.
+//! key, type, click, drag, settle and `wait_for`. Every tool that acts returns once the app
+//! reacted, and every mistake is an error result the agent reads.
 
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -22,10 +22,15 @@ pub const INSTRUCTIONS: &str = "Eyes and hands on an app in a private herdr-app,
 display that never reaches the user's: screen reads a terminal's text, screenshot the window's \
 pixels; key, type, click and drag act on the window as its user would, and return once the app \
 reacted. When the focused terminal's program speaks vision-signal, and no held drag keeps the \
-button down, an action returns the frame it painted once it read the input; otherwise, once the window's pixels changed and settled. For \
-asynchronous work, call wait_for with the text the finished screen shows. Screens give each row \
-as `row: text`, drop the spaces and box sides that end a row, and fold runs of empty rows. click \
-and drag take the window's pixels, as screenshot shows them.";
+button down, an action returns the frame it painted once it read the input; otherwise, once the \
+window's pixels changed and settled. After a change the app's own tools made, settle returns \
+the same way, with no input. A vision-signal program's frame then shows what reached its \
+terminal, not a change it learns another way (a socket, a file) nor the rest of the window: \
+for those, pass pixels, which waits on the whole window. For asynchronous work, \
+call wait_for with the text the finished screen shows. Screens give each row as `row: text`, \
+drop the spaces and box sides that end a row, and fold runs of empty rows; changed_rows lists \
+the rows that differ from the previous screen of that terminal a tool returned, and is absent \
+on the first. click and drag take the window's pixels, as screenshot shows them.";
 
 /// The longest a `wait_for` may wait.
 const MAX_WAIT_MS: u64 = 60_000;
@@ -110,6 +115,16 @@ struct WaitInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct SettleInput {
+    /// Wait on the whole window's pixels, whatever has the focus: for a change outside the
+    /// focused terminal (herdr-app's panels, another pane, a new terminal), or one its program
+    /// learns another way than its terminal.
+    #[serde(default)]
+    pixels: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct NoInput {}
 
 /// The vision tools, on the session an app starts and stops with its own tools.
@@ -148,6 +163,9 @@ impl Outcome {
             self.summary["terminal"] = json!(screen.terminal);
             if let Some(frame) = screen.frame {
                 self.summary["frame"] = json!(frame);
+            }
+            if let Some(changed) = &screen.changed_rows {
+                self.summary["changed_rows"] = json!(changed);
             }
         }
         content.push(ContentBlock::text(self.summary.to_string()));
@@ -226,7 +244,7 @@ impl VisionTools {
 #[tool_router(router = own_router)]
 impl VisionTools {
     #[tool(
-        description = "Read a terminal's whole screen as it is now, one line per row: the focused terminal's, or the one named by its hc address."
+        description = "Read a terminal's whole screen as it is now, one line per row: the focused terminal's, or the one named by its hc address. changed_rows lists the rows that differ from the previous screen of that terminal a tool returned."
     )]
     async fn screen(
         &self,
@@ -321,6 +339,23 @@ impl VisionTools {
                 modifiers: &input.modifiers,
                 hold: input.hold,
             })?))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Wait for the app to show a change no vision tool made, such as one the app's own tools made, and return the focused terminal's screen. When its program speaks vision-signal, returns the frame it painted once it read what reached its terminal before; for a change elsewhere in the window, or one the program learns another way (a socket, a file), pass pixels. Otherwise, or with pixels, returns once the window's pixels changed within a second and stayed quiet; changed: false says the window showed the change before the call, or never did."
+    )]
+    async fn settle(
+        &self,
+        Parameters(input): Parameters<SettleInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(move |vision| {
+            Ok(Outcome::reaction(if input.pixels {
+                vision.settle_pixels()?
+            } else {
+                vision.settle()?
+            }))
         })
         .await
     }

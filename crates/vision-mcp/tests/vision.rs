@@ -1,6 +1,8 @@
 //! An agent drives apps in the app sandbox through the vision tools, as an app's MCP server
 //! serves them: a program that speaks vision-signal, whose every action returns the frame that
-//! shows its reaction, and a shell, which speaks nothing and is seen through its pixels. The
+//! shows its reaction, and a shell, which speaks nothing and is seen through its pixels. settle
+//! waits for both to show a change made through the core, as an app's own tools make, and on
+//! the whole window's pixels for a change beside the focused program. The
 //! tools see and drive the app again after each restart of its core, its window, or both.
 
 use app_sandbox::{AppSandbox, Isolation, Options, Programs, Restart};
@@ -215,11 +217,14 @@ async fn start(isolation: Isolation) -> (Client, VisionTools) {
 async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &VisionTools) {
     let shown = call(client, "wait_for", json!({"text": "vision probe"})).await;
     assert!(!shown.error, "{}", shown.text);
+    assert_eq!(shown.summary.get("changed_rows"), None);
 
     // Each action returns the screen of the frame that acknowledged it: no wait_for needed.
+    // The rows that changed since the screen before are the typed text's alone.
     let typed = call(client, "type", json!({"text": "hello"})).await;
     assert!(typed.summary["reaction"]["acknowledged"]["frame"].is_u64());
     assert!(typed.text.contains("typed: hello"), "{}", typed.text);
+    assert_eq!(typed.summary["changed_rows"], json!([1]));
     let pasted = call(
         client,
         "type",
@@ -231,6 +236,7 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         "{}",
         pasted.text
     );
+    assert_eq!(pasted.summary["changed_rows"], json!([2]));
     let clicked = call(client, "click", json!({"x": 800, "y": 400})).await;
     assert!(clicked.text.contains("mouse: click "), "{}", clicked.text);
     let dragged = call(
@@ -267,6 +273,13 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     assert!(!done.error, "{}", done.text);
     assert!(done.summary["frame"].is_u64(), "{}", done.summary);
 
+    // A key the core sends, as an app's own tools change it, shows once settle returns: the
+    // probe paints it late, in the frame that acknowledges the request settle pastes.
+    hc(vision, &["keys", "t1", "x"]);
+    let settled = call(client, "settle", json!({})).await;
+    assert!(settled.summary["reaction"]["acknowledged"]["frame"].is_u64());
+    assert!(settled.text.contains("typed: hellox"), "{}", settled.text);
+
     let screenshot = call(client, "screenshot", json!({})).await;
     let png = png::Decoder::new(std::io::Cursor::new(screenshot.image.unwrap()))
         .read_info()
@@ -286,6 +299,28 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         "{}",
         clicked.text
     );
+
+    // With pixels, settle waits on the whole window, though the probe has the focus: the
+    // shell beside it, released from a read that waits with no echo, prints half a second on.
+    let shell = clicked.summary["terminal"].as_str().unwrap().to_owned();
+    let waiting = call(
+        client,
+        "type",
+        json!({"text": "stty -echo; read line; stty echo; sleep 0.5; echo $((7 * 9))\n"}),
+    )
+    .await;
+    assert!(!waiting.error, "{}", waiting.text);
+    herdr_app(vision, &["do", "pane.focus", r#"{"terminal": "t1"}"#]);
+    call(client, "settle", json!({"pixels": true})).await;
+    hc(vision, &["keys", &shell, "enter"]);
+    let settled = call(client, "settle", json!({"pixels": true})).await;
+    assert_eq!(settled.summary["terminal"], "t1");
+    assert_eq!(
+        settled.summary["reaction"]["pixels"],
+        json!({"changed": true, "settled": true})
+    );
+    let beside = call(client, "screen", json!({"terminal": shell})).await;
+    assert!(beside.text.contains(": 63"), "{}", beside.text);
 }
 
 /// A held drag keeps the button down until the next drag or click, on the program and on
@@ -347,6 +382,12 @@ fn shown_after<'a>(screen: &'a str, label: &str) -> &'a str {
         .1
 }
 
+/// Run `hc <arguments>` against the session's core.
+fn hc(vision: &VisionTools, arguments: &[&str]) -> Value {
+    let session = vision.session().lock().unwrap();
+    session.as_ref().unwrap().sandbox().hc(arguments).unwrap()
+}
+
 /// Run `herdr-app <arguments>` against the session's app.
 fn herdr_app(vision: &VisionTools, arguments: &[&str]) -> Value {
     let session = vision.session().lock().unwrap();
@@ -373,4 +414,22 @@ async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) 
     .await;
     assert!(missing.error);
     assert!(missing.text.contains("42"), "{}", missing.text);
+
+    // A key the core sends shows once settle returns, by the pixels: it releases a read that
+    // waits with no echo, so the window changes only when the output comes, half a second on.
+    let waiting = call(
+        client,
+        "type",
+        json!({"text": "stty -echo; read line; stty echo; sleep 0.5; echo $((6 * 9))\n"}),
+    )
+    .await;
+    assert!(!waiting.error, "{}", waiting.text);
+    let shell = shown.summary["terminal"].as_str().unwrap();
+    hc(vision, &["keys", shell, "enter"]);
+    let settled = call(client, "settle", json!({})).await;
+    assert_eq!(
+        settled.summary["reaction"]["pixels"],
+        json!({"changed": true, "settled": true})
+    );
+    assert!(settled.text.contains(": 54"), "{}", settled.text);
 }

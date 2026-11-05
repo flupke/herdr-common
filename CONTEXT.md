@@ -61,8 +61,8 @@ _Avoid_: daemon, server
 
 **Vision core**:
 The vision MCP tools every app's visual testing shares (`crates/vision-mcp`): `screen`,
-`screenshot`, `key`, `type`, `click`, `drag` and `wait_for`, on a vision session over an app
-sandbox. An app's own MCP server routes them beside its app-specific tools.
+`screenshot`, `key`, `type`, `click`, `drag`, `settle` and `wait_for`, on a vision session over
+an app sandbox. An app's own MCP server routes them beside its app-specific tools.
 _Avoid_: vision server (each app has its own), driver
 
 **Frame marker**:
@@ -71,7 +71,18 @@ frame's number, the latest acknowledgement it read, and its size. herdr-core rep
 `title` event, after the frame's bytes.
 
 **Acknowledgement**:
-How an app that speaks vision-signal confirms it read an input: after the input, the vision
-core pastes an acknowledgement request, and the first frame marker that names it shows the
-app's reaction to the input.
-_Avoid_: settle (the wait on pixels for an app that speaks no vision-signal)
+How an app that speaks vision-signal confirms it read an input: after the input, or at once
+for a settle, the vision core pastes an acknowledgement request, and the first frame marker that
+names it shows the app's reaction to what reached its terminal before.
+
+**Settle**:
+What `Vision::settle` and the `settle` tool do: wait for the app to show a change no input of
+the vision core made, such as one an app's own tools make. With an acknowledgement when the
+focused terminal's program speaks vision-signal, which shows what reached its terminal alone,
+else once the window's pixels changed and stayed quiet, as after an input (`settled` in
+`Reaction::Pixels`). On pixels alone, whatever has the focus, with `settle_pixels` (the tool's
+`pixels`).
+
+**Changed rows**:
+The rows of a terminal's screen whose text differs from the previous screen of that terminal
+the vision core returned, by any tool; none on the first.

@@ -44,9 +44,9 @@ vision-signal = { git = "https://github.com/flupke/herdr-common" }
 - `app-sandbox-cli`: the `app-sandbox` command, which keeps an app sandbox running across
   shell commands, for agents.
 - `vision-mcp`: the vision MCP core, an agent's eyes and hands on an app in the app sandbox:
-  `screen`, `screenshot`, `key`, `type`, `click`, `drag` and `wait_for`, which an app's own MCP
-  server routes beside its own tools. A session sees and drives the app again after each
-  restart.
+  `screen`, `screenshot`, `key`, `type`, `click`, `drag`, `settle` and `wait_for`, which an
+  app's own MCP server routes beside its own tools. `settle` waits for the app to show a change an
+  app's own tools made, and screens name the rows that changed since the previous one. A session sees and drives the app again after each restart.
 - `vision-display`: the sandbox's X display driven as its user would, through XTEST and the
   clipboard: the core's hands.
 - `vision-signal`: the frame markers and acknowledgements an app writes to its terminal, so the

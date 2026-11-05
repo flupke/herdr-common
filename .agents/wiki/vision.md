@@ -25,11 +25,14 @@ so keys, typing, clicks and drags reach a terminal or a mod alike, in the order 
 - While a held drag keeps the left button down, an input is judged by the window's pixels,
   with no acknowledgement request: the paste key would leave a drag on herdr-app's panels
   unable to drop (below).
+- `Vision::settle` is the same wait with no input; `settle_pixels` judges by the pixels alone.
 
 ## herdr-app and hc, as the core meets them
 
 Checked on herdr-app 0.1.13 and hc 0.1.18:
 
+- `hc keys` returns once the keys reached the terminal: an acknowledgement request pasted
+  after it reaches the program after them (the probe's settle test). `hc send` is untested so.
 - `hc events --json` prints a snapshot line (`terminals`, each with its `title`), then one
   `{"method": "event", "params": {"terminal", "type", "data"}}` line per change; a title change
   is `type: title` with `data.title`, after the bytes before it.
@@ -53,6 +56,8 @@ Checked on herdr-app 0.1.13 and hc 0.1.18:
 `make test CRATES=vision-mcp` drives `vision-probe` (a binary of the crate, std and
 vision-signal only, in `stty raw` mode) and a shell in the sandbox through the MCP tools. The
 probe paints its reaction late on purpose, so a core that reads the screen before the
-acknowledging frame fails the test. A change to the display input also needs the
-run beside the user's session in [The app sandbox](app-sandbox.md) (Testing a change), with
+acknowledging frame fails the test. The shell's settle releases a `read` that waits with no
+echo, then prints half a second later: nothing shows before the wait starts, so a settle that
+skips the change-wait fails. A change to the display input also needs the run beside the
+user's session in [The app sandbox](app-sandbox.md) (Testing a change), with
 `CRATES=vision-mcp`.
