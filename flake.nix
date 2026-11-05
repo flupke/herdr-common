@@ -203,10 +203,12 @@
                 pkgs.typos
                 rustComplexityAnalyzer
               ]
-              # The app sandbox (crates/app-sandbox) runs bubblewrap, and enters it with nsenter.
+              # The app sandbox (crates/app-sandbox) runs bubblewrap, enters it with nsenter, and
+              # relays a forward's connections into it with socat.
               ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 pkgs.bubblewrap
                 pkgs.util-linux
+                pkgs.socat
                 # The herdr-mod-vision skill records the sandbox's window, since the root window
                 # of Weston's Xwayland stays black: xdotool finds it, and ffmpeg-full grabs it
                 # (plain ffmpeg has no x11grab).

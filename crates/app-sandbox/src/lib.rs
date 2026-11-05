@@ -10,6 +10,7 @@
 
 mod bubble;
 mod environment;
+mod forward;
 mod plain;
 mod process;
 mod restart;
@@ -19,7 +20,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc;
+use std::sync::{Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use eyre::{Context, ContextCompat, Result, ensure};
@@ -27,6 +28,7 @@ use serde_json::Value;
 
 use bubble::Bubble;
 use environment::{Inputs, WAYLAND_SOCKET};
+use forward::Forward;
 use plain::Plain;
 pub use restart::Restart;
 
@@ -95,9 +97,14 @@ pub enum Isolation {
     /// A bubblewrap environment, with PID, network and mount namespaces of its own: the user's
     /// herdr-app, hc and Herdr directories and their runtime directory, which holds the sockets
     /// of their Wayland display and window manager, show empty inside, and nothing reaches the
-    /// network. Its files are in a tmpfs, `/tmp` inside. Once the sandbox stops, or the process
-    /// that holds it dies, `SIGKILL` included, the kernel kills its processes and frees its
-    /// files.
+    /// network: its loopback is its own, which the host reaches only through
+    /// [`AppSandbox::forward`]. Its files are in a tmpfs, `/tmp` inside, which the host reaches
+    /// through [`AppSandbox::directory`]: a script or argument the sandbox reads names a path
+    /// inside, under [`AppSandbox::inside`]. The host's own `/tmp`, where `TMPDIR` and so
+    /// `tempfile` put files by default, does not show inside; the rest of the host's files show
+    /// at their own paths, so a file or socket the test and the sandbox share by its path goes
+    /// there, such as under `target/`. Once the sandbox stops, or the process that holds it
+    /// dies, `SIGKILL` included, the kernel kills its processes and frees its files.
     #[default]
     Bubblewrap,
     /// No namespace, for a machine where bubblewrap cannot run, such as one that forbids
@@ -116,11 +123,14 @@ pub struct Options {
     /// The display's size, in pixels, which the app's window fills.
     pub display_size: (u16, u16),
     /// Variables added to the environment of every process of the sandbox, the app's
-    /// terminals included, after the inherited ones: such as a `PATH` that finds a stand-in
-    /// agent first, which still finds the pinned `hc` before it. A path in it is one as the
-    /// sandbox's processes see it, under [`AppSandbox::inside`]. A display or window manager
-    /// (`DISPLAY`, `WAYLAND_DISPLAY`, `SWAYSOCK`) is dropped: the sandbox's own display fills
-    /// it.
+    /// terminals included, over the inherited ones and the sandbox's defaults, such as
+    /// `BROWSER=true`, `TERM` and `SHELL`: a `BROWSER` of the caller's runs instead. A path in
+    /// it is one as the sandbox's processes see it, under [`AppSandbox::inside`]. What the
+    /// isolation stands on stays the sandbox's own: a display or window manager (`DISPLAY`,
+    /// `WAYLAND_DISPLAY`, `SWAYSOCK`) is dropped, and `HOME`, `TMPDIR`, the XDG directories,
+    /// `HERDR_APP_HOME`, `HC_SESSION` and the Vulkan driver are the sandbox's; a `PATH` comes
+    /// after the sandbox's `bin`, so one that finds a fake agent first still finds the
+    /// pinned `hc` before it.
     pub environment: Vec<(OsString, OsString)>,
 }
 
@@ -154,6 +164,8 @@ pub struct AppSandbox {
     app: Option<Child>,
     /// The number of the next screenshot's file.
     shots: AtomicU32,
+    /// The ports of the sandbox's loopback the host reaches ([`AppSandbox::forward`]).
+    forwards: Mutex<Vec<Forward>>,
 }
 
 impl AppSandbox {
@@ -193,6 +205,7 @@ impl AppSandbox {
             weston: None,
             app: None,
             shots: AtomicU32::new(0),
+            forwards: Mutex::new(Vec::new()),
         };
         sandbox.prepare(options.display_size)?;
         sandbox.start_display(options.display_size)?;
@@ -433,6 +446,44 @@ impl AppSandbox {
         }
     }
 
+    /// Let this process, and any other of the host's, reach the sandbox's TCP port `port` on
+    /// its loopback, `127.0.0.1:<port>` inside, at the same address on the host's loopback,
+    /// until the sandbox stops: an address the sandbox's processes print, such as a server's,
+    /// works on both sides. A port forwarded already stays as it is. Fails when the host's port
+    /// is taken: a server inside that picks any free port may pick one the host uses, and a
+    /// test that picks its port on the host avoids that. A connection the sandbox's port
+    /// refuses closes at once.
+    ///
+    /// In bubblewrap each connection runs socat, from this process's `PATH`, in the sandbox,
+    /// where it shows among [`processes`](Self::processes) while the connection lasts. In plain
+    /// isolation the sandbox shares the host's network, and this does nothing.
+    pub fn forward(&self, port: u16) -> Result<()> {
+        ensure!(
+            port != 0,
+            "a forward takes the port the sandbox listens on, not 0"
+        );
+        let Jail::Bubble(bubble) = &self.jail else {
+            return Ok(());
+        };
+        let mut forwards = self.forwards.lock().unwrap_or_else(PoisonError::into_inner);
+        if forwards.iter().any(|forward| forward.port() == port) {
+            return Ok(());
+        }
+        let socat = bubble::on_path("socat").context("no socat on PATH: run in the dev shell")?;
+        let entry = bubble.entry().clone();
+        let environment = self.environment.clone();
+        let home = self.inside().join("home");
+        let forward = Forward::start(port, move || {
+            let mut relay = entry.command(&socat, &home, &environment);
+            // Once one side closes, socat waits this long for the other side's end, half a
+            // second by default: a request whose client half-closes keeps its answer.
+            relay.args(["-t", "3600", "STDIO", &format!("TCP4:127.0.0.1:{port}")]);
+            relay
+        })?;
+        forwards.push(forward);
+        Ok(())
+    }
+
     /// The processes of the sandbox, by host PID.
     pub fn processes(&self) -> Vec<u32> {
         match &self.jail {
@@ -451,6 +502,12 @@ impl AppSandbox {
     }
 
     fn end(&mut self) -> Result<()> {
+        // No forward enters the sandbox once it ended, when another process may hold the PID
+        // nsenter targets.
+        self.forwards
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         if let Jail::Plain(_) = self.jail
             && let Some(mut weston) = self.weston.take()
         {

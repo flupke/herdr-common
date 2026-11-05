@@ -11,10 +11,24 @@ Three layers, in three files; a change to one leans on the others:
   client looks for `wayland-0`, finds none, and opens on Weston's Xwayland (`lib.rs`).
 - The environment drops every inherited variable that names the user's displays, window
   manager, Herdr tools or Claude Code session, and the displays a caller adds
-  (`environment.rs`).
+  (`environment.rs`). A caller's variables override the sandbox's defaults, such as
+  `BROWSER=true`, never what the isolation stands on.
 - In bubblewrap, the user's runtime directory and Herdr directories show empty, so a path typed
   in a sandbox terminal reaches none of their sockets (`bubble.rs`). Plain isolation has no such
   layer.
+
+## Reaching it from the host
+
+In bubblewrap the host reaches the sandbox's `/tmp` through `AppSandbox::directory()`, and a
+port of its loopback through `AppSandbox::forward` (`forward.rs`).
+
+- A forward is chosen over sharing the host's network (bwrap without `--unshare-net`): shared,
+  the sandbox would reach the user's X display by its abstract socket, and any port the user's
+  tools listen on.
+- Each connection runs socat under nsenter, so an app whose tests forward needs `socat` on its
+  dev shell's `PATH`, beside bubblewrap and nsenter.
+- `io::copy` from a `TcpStream` to a pipe splices, and a blocking splice from a TCP socket
+  waits for its whole length or the socket's end: a forward copies through a buffer instead.
 
 ## Gotchas
 

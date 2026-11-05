@@ -46,6 +46,11 @@ shows on the user's display nor takes their focus. In bubblewrap by default, or 
 bubblewrap cannot run.
 _Avoid_: private app, test app
 
+**Forward**:
+A TCP port of the app sandbox's loopback that the host reaches at the same `127.0.0.1:<port>`
+(`AppSandbox::forward`), such as a server's that an app runs in the sandbox and its test calls.
+_Avoid_: tunnel, port mapping
+
 **Restart**:
 What `AppSandbox::restart` does to the app sandbox's herdr-app, as a reboot or a crash would:
 `core` kills the core and every program in its terminals, and the window starts a new core;

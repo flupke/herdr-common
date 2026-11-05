@@ -8,7 +8,9 @@
 //! The tmpfs is mounted on `/tmp` rather than on a new empty directory: such a directory would
 //! outlive a `SIGKILL` of the holder, which then cannot remove it. The network namespace keeps
 //! the X display's abstract socket (`@/tmp/.X11-unix/X0`) from clashing with the user's
-//! displays or reaching them, and keeps the app off the network.
+//! displays or reaching them, and keeps the app off the network. The host reaches a port of its
+//! loopback through a [`Forward`](crate::forward::Forward), and its files through
+//! [`outside`](Bubble::outside).
 //!
 //! The rest of the host's filesystem is shared, except the directories the environment masks:
 //! each shows empty inside, under a tmpfs of its own, while the host's copy stays as it was.
@@ -37,14 +39,22 @@ const INSIDE: &str = "/tmp";
 pub(crate) struct Bubble {
     /// bwrap, which runs the holder.
     holder: Child,
+    entry: Entry,
+    /// The inode of the PID namespace, as `/proc/<pid>/ns/pid` names it.
+    namespace: u64,
+}
+
+/// How a command enters a running environment. A thread that keeps a copy, such as a
+/// [`Forward`](crate::forward::Forward)'s, stops using it before the environment ends: once the
+/// first process's PID is free, another process may take it.
+#[derive(Clone)]
+pub(crate) struct Entry {
     /// nsenter, found on this process's `PATH`: a command's own `PATH`, the sandbox's, would
     /// look in the host's `/tmp/bin` first.
     nsenter: PathBuf,
     /// The host PID of the namespace's first process: `/proc/<init>/root` shows the tmpfs from
     /// outside, and nsenter enters the namespaces through it.
     init: u32,
-    /// The inode of the PID namespace, as `/proc/<pid>/ns/pid` names it.
-    namespace: u64,
 }
 
 /// What bwrap's `--info-fd` reports.
@@ -88,8 +98,10 @@ impl Bubble {
         match serde_json::from_str::<Info>(&report) {
             Ok(info) if ready.as_deref() == Some("ready") => Ok(Self {
                 holder,
-                nsenter,
-                init: info.child_pid,
+                entry: Entry {
+                    nsenter,
+                    init: info.child_pid,
+                },
                 namespace: info.pid_namespace,
             }),
             _ => {
@@ -108,9 +120,51 @@ impl Bubble {
     /// The path that shows `inside`, a path inside the environment, from outside.
     pub(crate) fn outside(&self, inside: &Path) -> PathBuf {
         let relative = inside.strip_prefix("/").unwrap_or(inside);
-        PathBuf::from(format!("/proc/{}/root", self.init)).join(relative)
+        PathBuf::from(format!("/proc/{}/root", self.entry.init)).join(relative)
     }
 
+    /// A command that runs `program` inside the environment ([`Entry::command`]).
+    pub(crate) fn command(
+        &self,
+        program: &Path,
+        directory: &Path,
+        environment: &[(OsString, OsString)],
+    ) -> Command {
+        self.entry.command(program, directory, environment)
+    }
+
+    /// How a command enters the environment.
+    pub(crate) fn entry(&self) -> &Entry {
+        &self.entry
+    }
+
+    /// The nsenter that runs each [`command`](Self::command).
+    pub(crate) fn nsenter(&self) -> &Path {
+        &self.entry.nsenter
+    }
+
+    /// The processes in the environment's PID namespace, its first one included, by host PID.
+    pub(crate) fn processes(&self) -> Vec<u32> {
+        let name = format!("pid:[{}]", self.namespace);
+        crate::process::all()
+            .into_iter()
+            .filter(|pid| {
+                std::fs::read_link(format!("/proc/{pid}/ns/pid"))
+                    .is_ok_and(|link| link.as_os_str() == name.as_str())
+            })
+            .collect()
+    }
+
+    /// End the environment, and return once bwrap ended: the kernel killed every process in it
+    /// and freed its tmpfs.
+    pub(crate) fn end(&mut self) -> Result<()> {
+        drop(self.holder.stdin.take());
+        self.holder.wait().wrap_err("cannot wait for bwrap")?;
+        Ok(())
+    }
+}
+
+impl Entry {
     /// A command that runs `program` inside the environment, in `directory` (a path inside),
     /// with `environment` alone. nsenter forks the program into the namespaces, and waits for
     /// it. nsenter's own `--wd` opens its directory before it enters the mount namespace,
@@ -139,31 +193,6 @@ impl Bubble {
             .envs(environment.iter().cloned());
         command
     }
-
-    /// The nsenter that runs each [`command`](Self::command).
-    pub(crate) fn nsenter(&self) -> &Path {
-        &self.nsenter
-    }
-
-    /// The processes in the environment's PID namespace, its first one included, by host PID.
-    pub(crate) fn processes(&self) -> Vec<u32> {
-        let name = format!("pid:[{}]", self.namespace);
-        crate::process::all()
-            .into_iter()
-            .filter(|pid| {
-                std::fs::read_link(format!("/proc/{pid}/ns/pid"))
-                    .is_ok_and(|link| link.as_os_str() == name.as_str())
-            })
-            .collect()
-    }
-
-    /// End the environment, and return once bwrap ended: the kernel killed every process in it
-    /// and freed its tmpfs.
-    pub(crate) fn end(&mut self) -> Result<()> {
-        drop(self.holder.stdin.take());
-        self.holder.wait().wrap_err("cannot wait for bwrap")?;
-        Ok(())
-    }
 }
 
 impl Drop for Bubble {
@@ -173,7 +202,7 @@ impl Drop for Bubble {
 }
 
 /// The program `name` as this process's `PATH` finds it.
-fn on_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     std::env::split_paths(&std::env::var_os("PATH")?)
         .map(|directory| directory.join(name))

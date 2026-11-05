@@ -19,24 +19,45 @@ pub(crate) struct Inputs<'a> {
     pub(crate) root: &'a Path,
     /// Mesa's software Vulkan driver.
     pub(crate) vulkan_driver: &'a Path,
-    /// The variables the caller adds, after the inherited ones.
+    /// The variables the caller adds, over the inherited ones and the sandbox's defaults.
     pub(crate) added: &'a [(OsString, OsString)],
 }
 
-/// The environment of the sandbox's processes: `inherited`, this process's, without what
-/// reaches the user's Herdr, herdr-app or herdr-core (`HERDR_*`, `HC_*`, such as an agent's
-/// `HC_TERMINAL_ID` when the caller runs in a herdr-app terminal), their displays and window
-/// manager, their configuration, SSH agent, session bus or Claude Code session; then the
-/// caller's `added`, without displays; then the sandbox's own: private directories, `bin`
-/// first on `PATH`, Mesa's software Vulkan driver, no sound, no usage report, and
-/// `BROWSER=true`, which opens nothing. The display's `DISPLAY` comes once it runs.
+/// The environment of the sandbox's processes, each layer over the one before:
+///
+/// 1. `inherited`, this process's, without what reaches the user's Herdr, herdr-app or
+///    herdr-core (`HERDR_*`, `HC_*`, such as an agent's `HC_TERMINAL_ID` when the caller runs
+///    in a herdr-app terminal), their displays and window manager, their configuration, SSH
+///    agent, session bus or Claude Code session;
+/// 2. the sandbox's defaults: a plain shell and terminal, no sound, no usage report, and
+///    `BROWSER=true`, which opens nothing;
+/// 3. the caller's `added`, without displays: a caller's `BROWSER` wins over the default;
+/// 4. what the isolation stands on, which no caller overrides: private directories (`HOME`,
+///    `TMPDIR`, the XDG directories, `HERDR_APP_HOME`), the core's session, `bin` first on
+///    `PATH`, before the caller's, and Mesa's software Vulkan driver.
+///
+/// The display's `DISPLAY` comes once it runs.
 pub(crate) fn environment(
     inputs: &Inputs,
     inherited: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Vec<(OsString, OsString)> {
+    let defaults = [
+        ("SHELL", "/bin/sh"),
+        ("PS1", "$ "),
+        ("TERM", "xterm-256color"),
+        ("BROWSER", "true"),
+        ("HERDR_APP_NO_SOUND", "1"),
+        ("HERDR_TELEMETRY", "0"),
+        ("DO_NOT_TRACK", "1"),
+    ];
     let mut environment: BTreeMap<OsString, OsString> = inherited
         .into_iter()
         .filter(|(name, _)| !reaches_the_user(name))
+        .chain(
+            defaults
+                .into_iter()
+                .map(|(name, value)| (name.into(), value.into())),
+        )
         .chain(
             inputs
                 .added
@@ -63,15 +84,8 @@ pub(crate) fn environment(
         // hc's manual asks tests for a session of their own, beside private XDG directories.
         ("HC_SESSION".into(), CORE_SESSION.into()),
         ("TMPDIR".into(), inputs.root.into()),
-        ("SHELL".into(), "/bin/sh".into()),
-        ("PS1".into(), "$ ".into()),
-        ("TERM".into(), "xterm-256color".into()),
-        ("BROWSER".into(), "true".into()),
         ("VK_DRIVER_FILES".into(), inputs.vulkan_driver.into()),
         ("VK_ICD_FILENAMES".into(), inputs.vulkan_driver.into()),
-        ("HERDR_APP_NO_SOUND".into(), "1".into()),
-        ("HERDR_TELEMETRY".into(), "0".into()),
-        ("DO_NOT_TRACK".into(), "1".into()),
     ]);
     environment.into_iter().collect()
 }

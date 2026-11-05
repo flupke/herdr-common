@@ -8,7 +8,7 @@ fn variables(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
 }
 
 #[test]
-fn keeps_the_user_s_displays_herdr_and_claude_out_and_puts_the_caller_s_path_after_the_sandbox_s() {
+fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_defaults_alone() {
     let inherited = variables(&[
         ("PATH", "/usr/bin"),
         ("LANG", "C.UTF-8"),
@@ -38,12 +38,23 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_puts_the_caller_s_path_aft
             "/run/user/1000/cc-socks/1.sock",
         ),
         ("TMPDIR", "/tmp/nix-shell.1"),
+        // The user's own browser and terminal, which never reach the sandbox.
+        ("BROWSER", "firefox"),
+        ("TERM", "screen"),
     ]);
     let added = variables(&[
         ("PATH", "/sandbox/stand-ins:/usr/bin"),
         ("LANG", "fr_FR.UTF-8"),
         ("DISPLAY", ":1"),
         ("WAYLAND_DISPLAY", "/run/user/1000/wayland-1"),
+        ("BROWSER", "/sandbox/browser"),
+        // What the isolation stands on: the sandbox's own wins.
+        ("HOME", "/home/user"),
+        ("HERDR_APP_HOME", "/home/user/.config/herdr-app"),
+        ("HC_SESSION", "default"),
+        ("XDG_RUNTIME_DIR", "/run/user/1000"),
+        ("TMPDIR", "/tmp"),
+        ("VK_DRIVER_FILES", "/gpu.json"),
     ]);
     let environment = environment(
         &Inputs {
@@ -60,7 +71,7 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_puts_the_caller_s_path_aft
     assert_eq!(
         environment,
         [
-            ("BROWSER", "true"),
+            ("BROWSER", "/sandbox/browser"),
             ("DO_NOT_TRACK", "1"),
             ("HC_SESSION", "sandbox"),
             ("HERDR_APP_HOME", "/sandbox/config/herdr-app"),

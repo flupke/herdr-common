@@ -40,7 +40,8 @@ vision-signal = { git = "https://github.com/flupke/herdr-common" }
 
 - `app-sandbox`: a private herdr-app on a headless Weston display, in bubblewrap, for tests
   that drive and screenshot the app without touching your display or focus. It restarts the
-  app's core, its window, or both, as a reboot would.
+  app's core, its window, or both, as a reboot would, and lets the test reach a port that a
+  server in the sandbox listens on.
 - `app-sandbox-cli`: the `app-sandbox` command, which keeps an app sandbox running across
   shell commands, for agents.
 - `vision-mcp`: the vision MCP core, an agent's eyes and hands on an app in the app sandbox:

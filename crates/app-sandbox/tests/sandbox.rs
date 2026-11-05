@@ -1,10 +1,15 @@
 //! A sandbox runs the pinned herdr-app on its own display, shows its window in a screenshot,
 //! and leaves nothing behind once it stops, in each isolation; its `xdg-open` runs the desktop
-//! entry that claims a link's scheme, as on a desktop.
+//! entry that claims a link's scheme, as on a desktop, the caller's `BROWSER` runs, and the host
+//! reads the files it wrote;
+//! the host reaches a port of its loopback through a forward.
 
 use std::collections::BTreeSet;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::process::Stdio;
 
 use app_sandbox::{AppSandbox, Isolation, Options, Programs};
 
@@ -79,8 +84,13 @@ fn plain() {
 }
 
 #[test]
-fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme() {
-    let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &Options::default()).unwrap();
+fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme_or_the_caller_s_browser() {
+    // The handler below, as the sandbox's processes see it: `/tmp` in bubblewrap.
+    let options = Options {
+        environment: vec![("BROWSER".into(), "/tmp/handler".into())],
+        ..Options::default()
+    };
+    let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &options).unwrap();
     let (inside, outside) = (sandbox.inside(), sandbox.directory());
     let handler = outside.join("handler");
     std::fs::write(
@@ -113,7 +123,62 @@ fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme() {
             .unwrap();
         assert!(status.success(), "xdg-open {link}: {status}");
     }
+    let status = sandbox
+        .command(Path::new("sh"))
+        .args(["-c", r#""$BROWSER" "$0""#, "https://browsed.example/"])
+        .status()
+        .unwrap();
+    assert!(status.success(), "$BROWSER: {status}");
     let read = |name: &str| std::fs::read_to_string(outside.join(name)).unwrap();
-    assert_eq!(read("handled.log"), "focus sandbox+test://agent/1\n");
+    assert_eq!(
+        read("handled.log"),
+        "focus sandbox+test://agent/1\nhttps://browsed.example/\n"
+    );
     assert_eq!(read("opened.log"), "https://example.com/\n");
+}
+
+#[test]
+fn reaches_a_port_of_the_bubblewrap_loopback_through_a_forward_until_it_stops() {
+    let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &Options::default()).unwrap();
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    // An echo server inside, which says on standard error once it listens.
+    let listen = format!("TCP-LISTEN:{port},bind=127.0.0.1");
+    let mut server = sandbox
+        .command(Path::new("socat"))
+        .args(["-d", "-d", &listen, "EXEC:cat"])
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Kept open to the end: socat dies of a write to a closed pipe.
+    let mut said = BufReader::new(server.stderr.take().unwrap()).lines();
+    let listening = said
+        .by_ref()
+        .map_while(Result::ok)
+        .any(|line| line.contains(&format!("listening on AF=2 127.0.0.1:{port}")));
+    assert!(listening, "the server inside never listened");
+    assert!(
+        TcpStream::connect(("127.0.0.1", port)).is_err(),
+        "the host reached the sandbox's loopback without a forward"
+    );
+
+    sandbox.forward(port).unwrap();
+    // Again, as a test does that forwards each port it reads: the forward stays.
+    sandbox.forward(port).unwrap();
+    let mut connection = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    connection.write_all(b"ping").unwrap();
+    let mut echoed = [0; 4];
+    connection.read_exact(&mut echoed).unwrap();
+    assert_eq!(&echoed, b"ping");
+    drop(connection);
+
+    sandbox.stop().unwrap();
+    server.wait().unwrap();
+    assert!(
+        TcpStream::connect(("127.0.0.1", port)).is_err(),
+        "the forward outlived the sandbox"
+    );
 }
