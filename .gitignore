@@ -1,0 +1,4 @@
+/target*/
+/.direnv/
+/.scratch/
+/.claude/scheduled_tasks.lock
