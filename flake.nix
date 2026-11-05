@@ -207,6 +207,11 @@
               ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 pkgs.bubblewrap
                 pkgs.util-linux
+                # The herdr-mod-vision skill records the sandbox's window, since the root window
+                # of Weston's Xwayland stays black: xdotool finds it, and ffmpeg-full grabs it
+                # (plain ffmpeg has no x11grab).
+                pkgs.ffmpeg-full
+                pkgs.xdotool
               ];
               # Not on PATH: `herdr` there stays the user's own Herdr.
               TEST_HERDR_BIN_PATH = "${herdrFor system}/bin/herdr";

@@ -25,6 +25,19 @@ the app takes as a `git` dependency.
 
 - `app-sandbox`: a private herdr-app on a headless Weston display, in bubblewrap, for tests
   that drive and screenshot the app without touching your display or focus.
+- `app-sandbox-cli`: the `app-sandbox` command, which keeps an app sandbox running across
+  shell commands, for agents.
+
+## The herdr-mod-vision skill
+
+`skills/herdr-mod-vision` lets a coding agent see and drive the herdr-app mod it builds, in an
+app sandbox: commands, the mod's state, screenshots and recordings, without taking your window.
+Install it as a link, so it runs this checkout's `app-sandbox`, once any older copy of the
+skill is out of the way:
+
+```sh
+ln -sfn "$PWD/skills/herdr-mod-vision" ~/.claude/skills/herdr-mod-vision
+```
 
 ## The pinned Herdr tools
 

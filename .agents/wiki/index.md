@@ -12,6 +12,9 @@ settings the skills read are in [.agents/settings/](../settings/).
 - [Checks](checks.md): gotchas of the check commands.
 - [The app sandbox](app-sandbox.md): how `crates/app-sandbox` keeps a private herdr-app off the
   user's display, its bubblewrap gotchas, and how to test a change to it.
+- [The herdr-mod-vision skill](mod-vision.md): how the skill and the `app-sandbox` command keep
+  a sandbox across shell commands, their gotchas (recording, paths inside), and how to test a
+  change to them.
 - [The pinned Herdr tools](herdr-tools.md): the herdr, herdr-app and hc releases the tests run,
   how to change one, and how to check a change to the flake.
 - [Tests](unit-tests.md): the testing policy, tautological tests, how a test waits.

@@ -42,3 +42,9 @@ with their own `HERDR_APP_HOME`, `HC_SESSION`, XDG directories and Weston displa
 shows on the user's display nor takes their focus. In bubblewrap by default, or plain where
 bubblewrap cannot run.
 _Avoid_: private app, test app
+
+**Holder**:
+The process that `app-sandbox start` leaves running, which holds an app sandbox and answers the
+commands that follow on a socket named after the sandbox, until `stop`: an agent drives the
+sandbox with one shell command after another.
+_Avoid_: daemon, server

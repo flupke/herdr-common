@@ -1,0 +1,26 @@
+[package]
+name = "app-sandbox-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "The app-sandbox command: keeps an app sandbox running across separate shell commands, for agents that drive a herdr-app mod in it."
+
+[[bin]]
+name = "app-sandbox"
+path = "src/main.rs"
+
+[dependencies]
+app-sandbox = { path = "../app-sandbox" }
+clap = { version = "4", features = ["derive"] }
+eyre = "0.6"
+rustix = { version = "1", features = ["process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

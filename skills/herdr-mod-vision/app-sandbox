@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# The app-sandbox command of the herdr-common checkout that holds this skill, built and run in
+# that checkout's dev shell, which names the pinned herdr-app and hc: `app-sandbox --help`.
+# `app-sandbox tool <program> [argument...]` runs a tool of that dev shell instead, such as
+# ffmpeg, outside any sandbox. A link to this skill's folder works too: the script finds the
+# checkout through it.
+set -euo pipefail
+root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+if [ "${1:-}" = tool ]; then
+  shift
+  exec "$root/scripts/dev-shell" "$@"
+fi
+exec "$root/scripts/dev-shell" cargo run --quiet --manifest-path "$root/Cargo.toml" \
+  --package app-sandbox-cli -- "$@"

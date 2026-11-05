@@ -32,6 +32,9 @@ Before you write a test, read `.agents/wiki/unit-tests.md`: it says which tests 
 place. Every change deletes the tests it makes obsolete or redundant. Acceptance criteria
 name outcomes the user can see, not lists of test cases.
 
+A change to the `herdr-mod-vision` skill or the `app-sandbox` command is tested by following the
+skill on a real mod in the sandbox: see [The herdr-mod-vision skill](.agents/wiki/mod-vision.md).
+
 A change to `flake.nix` is checked by `nix flake check`, which runs each pinned tool and
 fails unless it reports its pinned version, and by the dev shell's variables: see
 [The pinned Herdr tools](.agents/wiki/herdr-tools.md).
