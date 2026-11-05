@@ -186,17 +186,23 @@ impl Directory {
         self.0.join("forks").join(format!("{session}.{kind}"))
     }
 
-    /// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, or else `claude` here, so
-    /// that a fake agent never writes in the user's.
+    /// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, or else `claude-config`
+    /// here, so that a fake agent never writes in the user's, and an app may link the agent as
+    /// `claude` in this directory.
     pub fn configuration(&self) -> PathBuf {
-        std::env::var_os("CLAUDE_CONFIG_DIR").map_or_else(|| self.0.join("claude"), PathBuf::from)
+        std::env::var_os("CLAUDE_CONFIG_DIR")
+            .map_or_else(|| self.0.join("claude-config"), PathBuf::from)
     }
+}
+
+/// The project folder under Claude Code's configuration directory `configuration` where the
+/// fake agent and its forks keep their sessions' transcripts, as Claude Code keeps a project's.
+pub fn transcripts(configuration: &Path) -> PathBuf {
+    configuration.join("projects/fake-agent")
 }
 
 /// The transcript that the fake agent and its forks keep for `session` under Claude Code's
 /// configuration directory `configuration`, as Claude Code does.
 pub fn transcript(configuration: &Path, session: &str) -> PathBuf {
-    configuration
-        .join("projects/fake-agent")
-        .join(format!("{session}.jsonl"))
+    transcripts(configuration).join(format!("{session}.jsonl"))
 }

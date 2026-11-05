@@ -22,5 +22,5 @@ settings the skills read are in [.agents/settings/](../settings/).
   and cleaning up.
 - [The vision core](vision.md): how an action knows the app reacted, how herdr-app and hc
   behave under the core, and how to test a change to it.
-- [The fake agent](fake-agent.md): what Herdr reads of it, and how to watch it in a private
-  Herdr.
+- [The fake agent](fake-agent.md): what Herdr and herdr-app read of it, and how to watch it in
+  a private one.

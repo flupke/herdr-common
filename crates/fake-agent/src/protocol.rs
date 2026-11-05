@@ -36,8 +36,17 @@ pub enum Event {
     Hello { role: Role },
     /// It started with these arguments, and its session started.
     Started { args: Vec<String> },
+    /// Its session `session` started from `start` (`startup`, `resume`, `clear` or `fork`),
+    /// in Herdr 0.9, in herdr-app and in a plain terminal alike. The fake agent reports it once
+    /// its `SessionStart` hooks ran: the app's, then, in Herdr 0.9, Herdr's integration's
+    /// ([`Event::SessionReported`] first). A resume the test keeps unheard
+    /// ([`crate::Directory::unreported_resume`]) reports none. A real Claude Code's observing
+    /// hook ([`crate::observing_hooks`]) is one of its `SessionStart` hooks, which Claude Code
+    /// runs together: it reports the start in no order with the app's hook.
+    SessionStarted { session: String, start: String },
     /// It reported its session to Herdr as Claude's Herdr integration does, from `start`:
-    /// `startup`, `resume`, `clear` or `fork`.
+    /// `startup`, `resume`, `clear` or `fork`. The fake agent reports it in Herdr 0.9 alone; a
+    /// real Claude Code's observing hook, in any terminal.
     SessionReported { session: String, start: String },
     /// It reported its state to Herdr itself ([`crate::variables::REPORT_STATE`]).
     StateReported { state: String },
@@ -106,6 +115,11 @@ pub enum Command {
     Suggest { text: String },
     /// Show `title` outside its turns, for Herdr's detection to read.
     ShowTitle { title: String },
+    /// Show itself working when `working`, as Claude Code does: a spinner title, and OSC 7501
+    /// `working` under herdr-app; idle again otherwise. It starts and ends no turn and runs no
+    /// hook: the agent at work on what no prompt of the test started. A turn's start or end,
+    /// `/clear` and `/bg` show their own state over it.
+    ShowWorking { working: bool },
     /// Show `text` as its whole screen while nothing is typed in it.
     ShowScreen { text: String },
     /// Exit: the `SessionEnd` hook, then [`Event::Exited`], and it ends.

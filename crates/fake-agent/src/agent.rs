@@ -199,14 +199,18 @@ impl<'a> Agent<'a> {
     }
 
     /// The session `session` starts, from `start`: its `SessionStart` hooks run, the app's,
-    /// then Herdr's integration's, which reports it to Herdr.
+    /// then Herdr's integration's, which reports it to Herdr, and it tells the test.
     fn session_starts(&mut self, session: String, start: Start) {
         self.transcript.start(&session);
-        self.session = Some(session);
+        self.session = Some(session.clone());
         self.start = start;
         let printed = self.hook("SessionStart", &json!({"source": start.as_str()}));
         self.show(&printed);
         self.report_session();
+        self.report(&Event::SessionStarted {
+            session,
+            start: start.as_str().to_owned(),
+        });
     }
 
     /// Reports its session to Herdr 0.9, as Claude's Herdr integration does.
@@ -484,6 +488,8 @@ impl<'a> Agent<'a> {
             Command::Say { text } => self.screen.log(reply::render(text, self.hyperlinks)),
             Command::Suggest { text } => self.screen.suggest(text.clone()),
             Command::ShowTitle { title } => self.screen.set_title(title.clone()),
+            Command::ShowWorking { working: true } => self.screen.working(),
+            Command::ShowWorking { working: false } => self.screen.idle(),
             Command::ShowScreen { text } => self.screen.set_shown(text.clone()),
             _ => return false,
         }

@@ -57,10 +57,16 @@ fn a_real_agent_s_hooks_report_its_prompts_and_resumes_as_the_fake_agent_does() 
             serde_json::json!({"hook_event_name": "SessionStart", "session_id": "own",
             "source": "startup"})
         ),
-        [Event::SessionReported {
-            session: "own".into(),
-            start: "startup".into()
-        }]
+        [
+            Event::SessionReported {
+                session: "own".into(),
+                start: "startup".into()
+            },
+            Event::SessionStarted {
+                session: "own".into(),
+                start: "startup".into()
+            },
+        ]
     );
     // Claude Code wraps a long paste, such as a prompt Herdr types.
     assert_eq!(
@@ -82,6 +88,10 @@ fn a_real_agent_s_hooks_report_its_prompts_and_resumes_as_the_fake_agent_does() 
                 session: "fork".into()
             },
             Event::SessionReported {
+                session: "fork".into(),
+                start: "resume".into()
+            },
+            Event::SessionStarted {
                 session: "fork".into(),
                 start: "resume".into()
             },

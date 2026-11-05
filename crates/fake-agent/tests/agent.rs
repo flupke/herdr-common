@@ -1,6 +1,8 @@
 //! The fake agent in its pane, as the apps' tests drive it: its standard input stands for the
-//! keys typed in its pane, a script for the app's hooks, and, in Herdr 0.9, a socket the test
-//! listens on for Herdr's.
+//! keys typed in its pane, a file for its screen, a script for the app's hooks, and, in Herdr
+//! 0.9 (`HERDR_PANE_ID`), a socket the test listens on for Herdr's. Under herdr-app
+//! (`HC_TERMINAL_ID`), the test reads the states it reports in OSC 7501, and its titles, off its
+//! screen.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -130,10 +132,13 @@ impl Started {
     }
 
     fn transcript(&self, session: &str) -> Vec<serde_json::Value> {
-        lines(&fake_agent::transcript(&self.path("claude"), session))
-            .iter()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
+        lines(&fake_agent::transcript(
+            &self.path("claude-config"),
+            session,
+        ))
+        .iter()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
     }
 }
 
@@ -222,7 +227,7 @@ fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
     assert!(hooks.iter().all(|payload| {
         payload["session_id"] == SESSION
             && payload["transcript_path"]
-                == fake_agent::transcript(&agent.path("claude"), SESSION)
+                == fake_agent::transcript(&agent.path("claude-config"), SESSION)
                     .to_str()
                     .unwrap()
     }));
@@ -238,12 +243,7 @@ fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
     assert_eq!(transcript[2]["attachment"]["prompt"], "And this.");
     // herdr-app's core hears each state in OSC 7501.
     let screen = std::fs::read_to_string(agent.path("screen")).unwrap();
-    let states: Vec<_> = screen
-        .split("\x1b]7501;state=")
-        .skip(1)
-        .map(|report| report.split(':').next().unwrap())
-        .collect();
-    assert_eq!(states, ["idle", "working", "idle", "clear"]);
+    assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
 }
 
 #[test]
@@ -337,6 +337,30 @@ fn claude_code_s_own_commands_start_sessions_and_run_no_prompt_hook() {
     assert_ne!(cleared, SESSION);
     assert_ne!(forked, cleared);
     assert_eq!(hooks[4]["session_id"], SESSION);
+    // Under herdr-app, where it reports no session to Herdr, it tells the test of each start.
+    assert_eq!(
+        session_starts(&agent),
+        [
+            (SESSION, "startup"),
+            (cleared, "clear"),
+            (forked, "fork"),
+            (SESSION, "resume"),
+        ]
+        .map(|(session, start)| (session.to_owned(), start.to_owned()))
+    );
+    let transcripts = agent.path("claude-config/projects/fake-agent");
+    assert_eq!(
+        fake_agent::transcripts(&agent.path("claude-config")),
+        transcripts
+    );
+    let mut kept: Vec<_> = std::fs::read_dir(transcripts)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    kept.sort();
+    let mut expected = [SESSION, cleared, forked].map(|session| format!("{session}.jsonl"));
+    expected.sort();
+    assert_eq!(kept, expected, "the transcripts' project folder");
     assert_eq!(
         agent.transcript(cleared),
         [
@@ -344,6 +368,21 @@ fn claude_code_s_own_commands_start_sessions_and_run_no_prompt_hook() {
             "continuedInSessionId": forked})
         ]
     );
+}
+
+/// Each session start `agent` reported, with how it started.
+fn session_starts(agent: &Started) -> Vec<(String, String)> {
+    agent
+        .events
+        .try_received()
+        .unwrap()
+        .into_iter()
+        .filter(|reported| reported.from == agent.role)
+        .filter_map(|reported| match reported.event {
+            Event::SessionStarted { session, start } => Some((session, start)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Types `text` in the pane of `agent`, then Enter.
@@ -469,7 +508,7 @@ fn in_herdr_a_turn_ends_by_itself_once_herdr_saw_it() {
         release_count, 1,
         "the release of another pane is not the agent's"
     );
-    let transcript = fake_agent::transcript(&agent.path("claude"), SESSION);
+    let transcript = fake_agent::transcript(&agent.path("claude-config"), SESSION);
     let session_report = [
         "pane",
         "report-agent-session",
@@ -688,12 +727,14 @@ fn the_switch_files_swallow_a_prompt_and_keep_a_resume_unheard_or_late() {
     std::fs::write(&unreported, "1").unwrap();
     agent_types(&agent, "/resume late");
     // The agent reads its keys and the test's commands in the order they reach it.
-    agent.wait_for("the late resume", |event| {
+    agent.wait_for("the late resume's start", |event| {
         *event
-            == Event::ResumeReceived {
+            == Event::SessionStarted {
                 session: "late".into(),
+                start: "resume".into(),
             }
     });
+    let hooks_at_start = agent.hooks();
     agent.obey(&Command::Exit);
 
     let swallowed: Vec<_> = swallowed
@@ -715,6 +756,17 @@ fn the_switch_files_swallow_a_prompt_and_keep_a_resume_unheard_or_late() {
         .map(|payload| payload["session_id"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(starts, [SESSION, "late"], "the unheard resume runs no hook");
+    assert_eq!(
+        session_starts(&agent),
+        [(SESSION, "startup"), ("late", "resume")]
+            .map(|(session, start)| (session.to_owned(), start.to_owned())),
+        "nor tells the test of a start"
+    );
+    assert_eq!(
+        hooks_at_start.last().unwrap()["session_id"],
+        "late",
+        "the start is told once its hook ran"
+    );
     assert!(!unreported.exists(), "the agent removes the switch");
 }
 
@@ -737,6 +789,43 @@ fn an_app_s_hook_that_fails_ends_the_fake_agent() {
     );
     let Started { mut process, .. } = agent;
     assert!(!process.wait().unwrap().success());
+}
+
+#[test]
+fn it_shows_itself_working_without_a_turn() {
+    let mut agent = Started::new(&[], &[("HC_TERMINAL_ID", Path::new("t1"))]);
+    agent.wait_for("its start", |event| matches!(event, Event::Started { .. }));
+
+    let working = agent.obey(&Command::ShowWorking { working: true });
+    let idle = agent.obey(&Command::ShowWorking { working: false });
+    agent.obey(&Command::Exit);
+
+    agent.process.wait().unwrap();
+    assert_eq!(working, [], "no turn starts");
+    assert_eq!(idle, [], "no turn ends");
+    assert_eq!(
+        summary(&agent.hooks()),
+        [
+            r#"SessionStart "startup""#,
+            r#"SessionEnd "prompt_input_exit""#
+        ]
+    );
+    let screen = std::fs::read_to_string(agent.path("screen")).unwrap();
+    assert_eq!(
+        titles(&screen),
+        ["✳ Claude Code", "⠋ Claude Code", "✳ Claude Code"]
+    );
+    // herdr-app's core hears it in OSC 7501.
+    assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
+}
+
+/// The states `screen` reports to herdr-app's core in OSC 7501, in order.
+fn states(screen: &str) -> Vec<&str> {
+    screen
+        .split("\x1b]7501;state=")
+        .skip(1)
+        .map(|report| report.split(':').next().unwrap())
+        .collect()
 }
 
 /// The titles `screen` shows, in order.

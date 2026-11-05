@@ -12,9 +12,10 @@ use crate::{App, variables};
 
 /// Reports the event of Claude Code's hook on standard input: a submitted prompt, which a hook
 /// sees as it is submitted, as [`Event::PromptReceived`]; a session the agent resumed as
-/// [`Event::ResumeReceived`] then [`Event::SessionReported`]; a session it started as
-/// [`Event::SessionReported`]. A subagent's session is not the agent's, nor is a fork's: a fork
-/// runs the agent's hooks, since it inherits its configuration.
+/// [`Event::ResumeReceived`], then [`Event::SessionReported`] and [`Event::SessionStarted`]; a
+/// session it started as [`Event::SessionReported`] and [`Event::SessionStarted`]. A
+/// subagent's session is not the agent's, nor is a fork's: a fork runs the agent's hooks,
+/// since it inherits its configuration.
 ///
 /// # Panics
 /// Panics when its payload is no JSON, or the event socket is not there.
@@ -37,7 +38,13 @@ pub(crate) fn run(app: &App) {
             });
             resumed
                 .into_iter()
-                .chain([Event::SessionReported { session, start }])
+                .chain([
+                    Event::SessionReported {
+                        session: session.clone(),
+                        start: start.clone(),
+                    },
+                    Event::SessionStarted { session, start },
+                ])
                 .collect()
         }
         _ => Vec::new(),
