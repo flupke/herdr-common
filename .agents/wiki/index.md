@@ -17,3 +17,5 @@ settings the skills read are in [.agents/settings/](../settings/).
 - [Tests](unit-tests.md): the testing policy, tautological tests, how a test waits.
 - [Parallel workspaces](parallel-workspaces.md): the dev shell and the gate in a jj workspace,
   and cleaning up.
+- [The fake agent](fake-agent.md): what Herdr reads of it, and how to watch it in a private
+  Herdr.

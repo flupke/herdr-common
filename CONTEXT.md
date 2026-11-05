@@ -25,6 +25,12 @@ _Avoid_: test binary, vendored Herdr
 The Herdr, herdr-app and hc installed on the machine, on `PATH`, which the user works in. Tests
 never touch them.
 
+**Fake agent**:
+The program that plays Claude Code, or Codex, in a pane of a private Herdr or herdr-app for an
+app's tests: it runs the app's hooks, shows its state as the real agent does, and reports what it
+does to the test, which drives it with commands. Each app runs it from a program of its own.
+_Avoid_: stand-in, stand-in agent, mock agent
+
 **Visual testing**:
 An agent running an app's Herdr screen in a private Herdr or herdr-app, seeing it through
 screenshots and acting on it through commands, as the app's user would.

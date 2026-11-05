@@ -17,6 +17,13 @@ change only the internals, with every observable result the same, and it still p
 that survives the first edit is tautological; one that fails the second is pinned to the
 implementation: rewrite it to assert what callers observe, or delete it.
 
+## Code moved from the apps
+
+A crate made from code of the apps, moved or merged, carries the tests that guard what the
+apps' tests rely on: read how each app's tests drive the original, and give the crate its own
+test of each behaviour they need, in its new shape. The originals' own tests come along as far
+as they still hold.
+
 ## Tests that can go red
 
 - The expected value is written by hand from the behaviour the code owes, or comes from an
