@@ -5,21 +5,31 @@ headless sandbox, a fake agent, the `herdr-mod-vision` skill), pinned Herdr tool
 
 ## Using it from an app
 
-Check herdr-common out beside the app, then take its Rust crates through cargo `path`
-dependencies:
+No crate is published. An app takes the crates it tests with as `git` dev-dependencies, its
+`Cargo.lock` pinning the herdr-common revision (`cargo update -p <crate>` moves it):
 
 ```toml
 [dev-dependencies]
-<crate> = { path = "../herdr-common/crates/<crate>" }
+<crate> = { git = "https://github.com/flupke/herdr-common" }
 ```
 
-No crate is published, and none is pinned by git revision: the app builds against the
-herdr-common next to it.
+Or it takes them by `path`, but only from a test workspace of its own, with its own
+`[workspace]` and excluded from the app's, and herdr-common checked out beside the app:
 
-herdr-common is test tooling, but for one crate. Someone who clones an app alone has no `../herdr-common`,
-so an app takes these crates as dev-dependencies, or from a test workspace of its own, never in
-what it builds and installs. The one crate an app links, `vision-signal`, has no dependency, and
-the app takes it from git:
+```toml
+# in <app>/tests/tui/Cargo.toml
+[dependencies]
+<crate> = { path = "../../../herdr-common/crates/<crate>" }
+```
+
+Not by `path` from the app's own workspace: cargo reads every path dependency of a workspace,
+dev-dependencies included, so someone who clones the app alone could not build it. A private
+app that always sits beside herdr-common, as herdr-bowtie, may still take plain `path`
+dependencies.
+
+herdr-common is test tooling, but for one crate: an app never takes these crates in what it
+builds and installs. The one crate an app links, `vision-signal`, has no dependency, and the app
+takes it from git:
 
 ```toml
 [dependencies]

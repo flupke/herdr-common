@@ -6,14 +6,16 @@ What the apps on Herdr share for visual testing, and the Herdr tools they pin, i
 
 **App**:
 A program built on Herdr that uses herdr-common for its tests: herdr-bowtie,
-herdr-progressive-reviewer, enough-internet-for-today. Each lives in its own repository,
-checked out beside herdr-common.
+herdr-progressive-reviewer, herdr-ruminate, enough-internet-for-today. Each lives in its own
+repository, which someone may clone alone, save a private app such as herdr-bowtie, always
+beside herdr-common.
 _Avoid_: client, consumer, project
 
 **Test tooling**:
 What an app's tests and its agents' visual testing run, and never the app itself: all of
-herdr-common but `vision-signal`, which apps link (ADR 0003). An app takes it as a
-dev-dependency or from a test workspace of its own.
+herdr-common but `vision-signal`, which apps link (ADR 0003). An app takes it as a `git`
+dev-dependency, or by `path` from a test workspace of its own; a private app always beside
+herdr-common, as herdr-bowtie, may take it by plain `path` (ADR 0004).
 _Avoid_: shared code, common library
 
 **Pinned tool**:

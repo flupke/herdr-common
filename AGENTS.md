@@ -1,20 +1,23 @@
 # What this repository is
 
 herdr-common holds what the apps on Herdr share for visual testing: herdr-bowtie,
-herdr-progressive-reviewer and enough-internet-for-today. Its Rust crates live in
-`crates/<name>/`, which the workspace's `members = ["crates/*"]` takes as they land: a new
+herdr-progressive-reviewer, herdr-ruminate and enough-internet-for-today. Its Rust crates live
+in `crates/<name>/`, which the workspace's `members = ["crates/*"]` takes as they land: a new
 crate never touches the root `Cargo.toml`. `flake.nix` pins herdr, herdr-app and hc once for
 all of them ([The pinned Herdr tools](.agents/wiki/herdr-tools.md)).
 
 ## How the apps use it
 
-An app takes a crate through a cargo `path` dependency, `../herdr-common/crates/<name>`: no
-publishing, no git revision pins. So the crates here are test tooling: an app takes them as
-`[dev-dependencies]` or from a test workspace of its own (as the reviewer's `tests/tui`), never
-in what it builds and installs. ADR 0001 says why. The one exception is `crates/vision-signal`,
-the frame signal an app links: it has no dependency, and apps take it as a `git` dependency (ADR
-0003). Any other code an app links stays out of herdr-common, in a tiny crate of its own the app
-takes by git.
+No crate here is published. An app takes a crate as a `git` dependency on this repository, its
+`Cargo.lock` pinning the revision, or by `path` (herdr-common checked out beside the app) only
+from a test workspace of its own, as herdr-ruminate's `tests/tui`: cargo reads every path
+dependency of a workspace, dev-dependencies included. The private herdr-bowtie, always beside
+herdr-common, may take plain path dependencies (ADR 0004).
+
+The crates here are test tooling, never in what an app builds and installs (ADR 0001). The one
+exception is `crates/vision-signal`, the frame signal an app links: it has no dependency, and
+apps take it as a `git` dependency (ADR 0003). Any other code an app links stays out of
+herdr-common, in a tiny crate of its own the app takes by git.
 
 # Standards
 
@@ -39,6 +42,10 @@ skill on a real mod in the sandbox: see [The herdr-mod-vision skill](.agents/wik
 A change to `flake.nix` is checked by `nix flake check`, which runs each pinned tool and
 fails unless it reports its pinned version, and by the dev shell's variables: see
 [The pinned Herdr tools](.agents/wiki/herdr-tools.md).
+
+A change to docs alone is tested by searching README.md, AGENTS.md, CONTEXT.md,
+CODING_STANDARDS.md, the ADRs, the wiki, the skills and the crates' doc comments for each
+statement of what it changes, until all agree with it.
 
 # Wiki
 
