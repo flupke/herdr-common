@@ -68,8 +68,8 @@ pub enum Event {
     /// It ended its turn: its `Stop` hook printed a block decision with this reason, and it
     /// works on, or it did not, and it is idle.
     TurnEnded { blocked: Option<String> },
-    /// A key changed the text typed in its input line, which it reports while it suggests a
-    /// prompt ([`Command::Suggest`]).
+    /// Its input line after the keys of one read of its pane, or of those up to an Enter or a
+    /// Ctrl-D in it, which it reports while it suggests a prompt ([`Command::Suggest`]).
     InputLine { text: String },
     /// It did what `command` says: its answer to each command, once the command's effects and
     /// their events are done.

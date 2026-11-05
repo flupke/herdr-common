@@ -35,7 +35,8 @@ const BACKGROUND_REPORT: &str =
 
 /// What reaches the agent, one at a time.
 enum Input {
-    Key(Key),
+    /// The keys of one read of its pane.
+    Keys(Vec<Key>),
     Command(Command),
     Herdr(News),
 }
@@ -71,14 +72,14 @@ pub(crate) fn run(app: &App, args: &[String]) {
     let raw_mode = RawMode::enter();
     let mut agent = Agent::new(app, args, connection, pane, terminal.is_some());
     agent.starts(args);
-    std::thread::spawn(move || terminal::read_keys(|key| sender.send(Input::Key(key)).is_ok()));
+    std::thread::spawn(move || terminal::read_keys(|keys| sender.send(Input::Keys(keys)).is_ok()));
     if let Some(prompt) = launch::first_prompt(args) {
         agent.prompt(prompt);
     }
     agent.settle();
     for input in inputs {
         let next = match input {
-            Input::Key(key) => agent.key(key),
+            Input::Keys(keys) => agent.keys(keys),
             Input::Command(command) => agent.obey(command),
             Input::Herdr(news) => agent.hear(news),
         };
@@ -247,25 +248,46 @@ impl<'a> Agent<'a> {
         }
     }
 
-    fn key(&mut self, key: Key) -> Next {
-        let mut typed = self.screen.typed().to_owned();
-        match key {
-            Key::Enter => {
-                let text = self.screen.submit();
-                return self.submit(&text);
+    /// The keys of one read: it edits its input line with them and shows it before each Enter
+    /// and Ctrl-D and at the end, rather than per key. Each Enter submits it, and its turns
+    /// settle after.
+    fn keys(&mut self, keys: Vec<Key>) -> Next {
+        // The input line, once a key edited it, until it shows.
+        let mut edited: Option<String> = None;
+        for key in keys {
+            if !matches!(key, Key::Enter | Key::Exit) {
+                edit(
+                    edited.get_or_insert_with(|| self.screen.typed().to_owned()),
+                    key,
+                );
+                continue;
             }
-            Key::Exit => return self.exit(),
-            Key::Char(c) => typed.push(c),
-            Key::Backspace => {
-                typed.pop();
+            if let Some(typed) = edited.take() {
+                self.show_typed(typed);
             }
-            Key::Clear => typed.clear(),
+            if key == Key::Exit {
+                return self.exit();
+            }
+            let text = self.screen.submit();
+            if self.submit(&text) == Next::Exit {
+                return Next::Exit;
+            }
+            self.settle();
         }
-        self.screen.set_typed(typed.clone());
-        if self.screen.suggests() {
-            self.report(&Event::InputLine { text: typed });
+        if let Some(typed) = edited {
+            self.show_typed(typed);
         }
         Next::GoOn
+    }
+
+    /// Its input line holds `typed` from now on, which it reports while it suggests a prompt.
+    fn show_typed(&mut self, typed: String) {
+        self.screen.set_typed(typed);
+        if self.screen.suggests() {
+            self.report(&Event::InputLine {
+                text: self.screen.typed().to_owned(),
+            });
+        }
     }
 
     /// What was typed is submitted: Claude Code's own commands, a marker, or a prompt.
@@ -513,6 +535,18 @@ impl<'a> Agent<'a> {
             command => panic!("the fake agent got a fork's command: {command:?}"),
         }
         Next::GoOn
+    }
+}
+
+/// Edits the input line `typed` with `key`, which neither submits it nor exits.
+fn edit(typed: &mut String, key: Key) {
+    match key {
+        Key::Char(c) => typed.push(c),
+        Key::Backspace => {
+            typed.pop();
+        }
+        Key::Clear => typed.clear(),
+        Key::Enter | Key::Exit => {}
     }
 }
 

@@ -819,6 +819,33 @@ fn it_shows_itself_working_without_a_turn() {
     assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
 }
 
+#[test]
+fn a_pasted_prompt_costs_a_few_screens_not_one_per_key() {
+    let mut agent = Started::new(&[], &[("HC_TERMINAL_ID", Path::new("t1"))]);
+    agent.wait_for("its start", |event| matches!(event, Event::Started { .. }));
+    // 6.4 KB on 100 lines, as herdr-ruminate pastes.
+    let prompt = vec!["x".repeat(63); 100].join("\n");
+
+    agent.types(&format!("\u{1b}[200~{prompt}\u{1b}[201~\r"));
+    let received = agent.wait_for("the prompt", |event| {
+        matches!(event, Event::PromptReceived { .. })
+    });
+
+    assert_eq!(
+        received,
+        Event::PromptReceived {
+            text: prompt.clone()
+        }
+    );
+    // A draw per key writes the line typed so far each time: some 20 MB here.
+    let screen = std::fs::metadata(agent.path("screen")).unwrap().len();
+    let bound = 32 * prompt.len() as u64;
+    assert!(
+        screen < bound,
+        "{screen} bytes drawn for a paste, over {bound}"
+    );
+}
+
 /// The states `screen` reports to herdr-app's core in OSC 7501, in order.
 fn states(screen: &str) -> Vec<&str> {
     screen

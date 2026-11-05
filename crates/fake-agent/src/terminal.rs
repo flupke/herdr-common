@@ -85,11 +85,14 @@ impl Keys {
     }
 }
 
-/// Reads the keys typed in the pane, on standard input, and hands each to `send`, until the
-/// input ends or `send` returns false.
-pub(crate) fn read_keys(mut send: impl FnMut(Key) -> bool) {
+/// Reads the keys typed in the pane, on standard input, and hands those of each read to `send`
+/// together, so that the agent draws once per read rather than once per key, until the input
+/// ends or `send` returns false.
+pub(crate) fn read_keys(mut send: impl FnMut(Vec<Key>) -> bool) {
     let mut stdin = std::io::stdin().lock();
-    let mut bytes = [0u8; 1024];
+    // Up to a pipe's capacity: a test's pipe hands a paste over in one read, a pty in reads of
+    // at most 4 KiB.
+    let mut bytes = vec![0u8; 64 * 1024];
     let mut pending = Vec::new();
     let mut keys = Keys::default();
     loop {
@@ -109,10 +112,9 @@ pub(crate) fn read_keys(mut send: impl FnMut(Key) -> bool) {
         };
         let text = String::from_utf8_lossy(&pending[..valid]).into_owned();
         pending.drain(..valid);
-        for key in text.chars().filter_map(|c| keys.key(c)) {
-            if !send(key) {
-                return;
-            }
+        let read: Vec<Key> = text.chars().filter_map(|c| keys.key(c)).collect();
+        if !read.is_empty() && !send(read) {
+            return;
         }
     }
 }

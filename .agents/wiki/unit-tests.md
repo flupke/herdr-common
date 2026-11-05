@@ -39,6 +39,11 @@ small app the behaviour that makes a wrong tool fail, such as a reaction painted
 - A format this repository owns is compared with a hand-written literal, so a rename breaks the
   test as it would break the apps that read it.
 
+A fix for slowness is tested by the work the code does, never by a time bound, which load
+breaks: count what the slow path multiplies, such as the bytes the fake agent draws for a paste,
+and bound it well between the fixed count and the slow one. Run the test on the old code once,
+to see it go red.
+
 ## Tautological tests
 
 Code review deletes a tautological test, rewrites it to assert what the code computes, or, for
