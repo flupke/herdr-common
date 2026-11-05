@@ -374,15 +374,20 @@ impl<'a> Agent<'a> {
     /// Claude Code's `/resume <session>`: it goes on in `session`, whose `SessionStart` runs
     /// unless the test keeps it unheard ([`Directory::unreported_resume`]).
     fn resume(&mut self, session: &str) {
+        // The switch is read before the report: a test that sets the next resume's switch once
+        // it sees this one's must not reach this one.
+        let unreported = self.directory.unreported_resume();
+        let switch = std::fs::read_to_string(&unreported);
+        if switch.is_ok() {
+            std::fs::remove_file(&unreported).expect("the switch is the agent's to remove");
+        }
         self.report(&Event::ResumeReceived {
             session: session.to_owned(),
         });
-        let unreported = self.directory.unreported_resume();
-        let Ok(late) = std::fs::read_to_string(&unreported) else {
+        let Ok(late) = switch else {
             self.session_starts(session.to_owned(), Start::Resume);
             return;
         };
-        std::fs::remove_file(&unreported).expect("the switch is the agent's to remove");
         if let Ok(late) = late.trim().parse() {
             std::thread::sleep(Duration::from_millis(late));
             self.session_starts(session.to_owned(), Start::Resume);

@@ -55,11 +55,14 @@ pub enum Input<'a> {
         y: u16,
         modifiers: &'a [String],
     },
-    /// A drag with the left button between two of the window's pixels, with modifiers held.
+    /// A drag with the left button between two of the window's pixels, with modifiers held;
+    /// with `hold`, the button stays down at the end, until a click, or a drag without `hold`,
+    /// releases it.
     Drag {
         from: (u16, u16),
         to: (u16, u16),
         modifiers: &'a [String],
+        hold: bool,
     },
 }
 
@@ -174,7 +177,8 @@ impl Vision {
     }
 
     /// Give `input`, and return once the app reacted: with the frame that acknowledges it, when
-    /// the focused terminal's program speaks vision-signal and keeps the focus, or once the
+    /// the focused terminal's program speaks vision-signal and keeps the focus, and no held drag
+    /// keeps the button down; otherwise once the
     /// window's pixels changed and settled. Returns the focused terminal's screen then, if a
     /// terminal has the focus.
     pub fn act(&mut self, input: &Input<'_>) -> Result<(Reaction, Option<Screen>)> {
@@ -184,9 +188,13 @@ impl Vision {
         let before = self.display.fingerprint()?;
         self.give(input)?;
         // An input that moved the focus, such as a click on another pane, leaves the request
-        // nobody to read it.
+        // nobody to read it. The paste key would leave a held drag on herdr-app's panels unable
+        // to drop.
         let acknowledged = match speaking {
-            Some(terminal) if self.focused_terminal()?.as_deref() == Some(&terminal) => {
+            Some(terminal)
+                if !self.display.held()
+                    && self.focused_terminal()?.as_deref() == Some(&terminal) =>
+            {
                 self.acknowledge(&terminal)?
             }
             _ => None,
@@ -212,7 +220,8 @@ impl Vision {
                 from,
                 to,
                 modifiers,
-            } => self.display.drag(*from, *to, modifiers),
+                hold,
+            } => self.display.drag(*from, *to, modifiers, *hold),
         }
     }
 

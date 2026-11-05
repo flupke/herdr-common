@@ -22,6 +22,9 @@ so keys, typing, clicks and drags reach a terminal or a mod alike, in the order 
   hc's `foreground` events are no sign of it: hc reports a program's arrival after its first
   frames at times.
 - Any other focus (a shell, a mod) is judged by the window's pixels (`Reaction::Pixels`).
+- While a held drag keeps the left button down, an input is judged by the window's pixels,
+  with no acknowledgement request: the paste key would leave a drag on herdr-app's panels
+  unable to drop (below).
 
 ## herdr-app and hc, as the core meets them
 
@@ -35,6 +38,9 @@ Checked on herdr-app 0.1.13 and hc 0.1.18:
   pane maps to none.
 - herdr-app sends a program the mouse reports of clicks and drags without their modifiers: a
   Ctrl or Alt the core holds through them never shows in the program's reports.
+- A paste key pressed while a held drag keeps the left button down leaves a drag on
+  herdr-app's own panels (the Spaces list) unable to drop: the release that follows changes
+  nothing. A program's drag survives it.
 - In `herdr-app do <command> '<json>'`, `argv` is a JSON array; a string is ignored, and the
   terminal runs a shell.
 - In bubblewrap, `hc events` runs under nsenter, which forks: killing the nsenter leaves it

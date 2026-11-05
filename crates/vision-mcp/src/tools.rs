@@ -21,8 +21,8 @@ use crate::session::{Input, Reaction, Screen, Vision};
 pub const INSTRUCTIONS: &str = "Eyes and hands on an app in a private herdr-app, on a headless \
 display that never reaches the user's: screen reads a terminal's text, screenshot the window's \
 pixels; key, type, click and drag act on the window as its user would, and return once the app \
-reacted. When the focused terminal's program speaks vision-signal, an action returns the frame \
-it painted once it read the input; otherwise, once the window's pixels changed and settled. For \
+reacted. When the focused terminal's program speaks vision-signal, and no held drag keeps the \
+button down, an action returns the frame it painted once it read the input; otherwise, once the window's pixels changed and settled. For \
 asynchronous work, call wait_for with the text the finished screen shows. Screens give each row \
 as `row: text`, drop the spaces and box sides that end a row, and fold runs of empty rows. click \
 and drag take the window's pixels, as screenshot shows them.";
@@ -84,6 +84,13 @@ struct DragInput {
     /// Modifiers held through the drag: `ctrl`, `shift`, `alt`, `super`.
     #[serde(default)]
     modifiers: Vec<String>,
+    /// Keep the button down at the end, to look at the drag under way, until a click, or a drag
+    /// without hold, releases it. The next drag goes on with it, with no press: start it at this
+    /// drag's `to`, or the pointer jumps to its `from` with the button down. The next click
+    /// releases it where this drag ended, which drops there, then clicks. A paste while the
+    /// button is held leaves a drag on herdr-app's panels unable to drop.
+    #[serde(default)]
+    hold: bool,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -299,7 +306,7 @@ impl VisionTools {
     }
 
     #[tool(
-        description = "Drag with the left button from one pixel of the app's window to another, as a hand does, and return once the app reacted, with the focused terminal's screen."
+        description = "Drag with the left button from one pixel of the app's window to another, as a hand does, and return once the app reacted, with the focused terminal's screen. With hold, the button stays down at the end, for a screenshot of the drag under way, until a click, or a drag without hold, releases it; the window's pixels then tell the app's reaction, as no frame is awaited while the button is down."
     )]
     async fn drag(
         &self,
@@ -312,6 +319,7 @@ impl VisionTools {
                 from: (from_x, from_y),
                 to: (to_x, to_y),
                 modifiers: &input.modifiers,
+                hold: input.hold,
             })?))
         })
         .await

@@ -1,10 +1,11 @@
 //! The probe the vision core's integration tests drive: a full-screen terminal program that
 //! speaks vision-signal and shows what it read. Run it in a raw terminal (`stty raw -echo`).
 //!
-//! It shows the keys typed, the last text pasted, the last click or drag, and work started by
-//! Enter, which shows `working on <typed>`, then `done: <typed>` half a second later. It paints
-//! its reaction to an input a moment after reading it, as a busy app does: a core that reads
-//! the screen before the frame that acknowledges its input sees the screen from before.
+//! It shows the keys typed, the last text pasted, the last click or drag (`dragging` while the
+//! button is down), where the last drag dropped, and work started by Enter, which shows
+//! `working on <typed>`, then `done: <typed>` half a second later. It paints its reaction to an
+//! input a moment after reading it, as a busy app does: a core that reads the screen before the
+//! frame that acknowledges its input sees the screen from before.
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -26,6 +27,7 @@ struct State {
     typed: String,
     pasted: String,
     mouse: String,
+    dropped: String,
     work: String,
     /// Where the left button went down, and whether it moved since.
     pressed: Option<((u32, u32), bool)>,
@@ -139,14 +141,17 @@ fn mouse(state: &mut State, report: &[u8], released: bool) {
     if released {
         if let Some((from, moved)) = state.pressed.take() {
             state.mouse = if moved {
-                format!("drag {},{} -> {},{}", from.0, from.1, cell.0, cell.1)
+                let way = format!("{},{} -> {},{}", from.0, from.1, cell.0, cell.1);
+                state.dropped.clone_from(&way);
+                format!("drag {way}")
             } else {
                 format!("click {},{}", cell.0, cell.1)
             };
         }
     } else if button & 32 != 0 {
-        if let Some((_, moved)) = &mut state.pressed {
+        if let Some((from, moved)) = &mut state.pressed {
             *moved = true;
+            state.mouse = format!("dragging {},{} -> {},{}", from.0, from.1, cell.0, cell.1);
         }
     } else if button == 0 {
         state.pressed = Some((cell, false));
@@ -158,10 +163,12 @@ fn paint(state: &Mutex<State>) {
     let mut state = lock(state);
     state.marker.frame += 1;
     let screen = format!(
-        "\x1b[H\x1b[2Jvision probe\r\ntyped: {}\r\npasted: {}\r\nmouse: {}\r\nwork: {}{}",
+        "\x1b[H\x1b[2Jvision probe\r\ntyped: {}\r\npasted: {}\r\nmouse: {}\r\ndropped: {}\r\n\
+         work: {}{}",
         state.typed,
         state.pasted,
         state.mouse,
+        state.dropped,
         state.work,
         state.marker.escape_sequence()
     );

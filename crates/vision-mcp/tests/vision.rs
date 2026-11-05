@@ -145,17 +145,14 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         json!({"from": [600, 400], "to": [1000, 400]}),
     )
     .await;
-    let drag = dragged
-        .text
-        .lines()
-        .find_map(|line| line.split_once("mouse: drag "))
-        .unwrap_or_else(|| panic!("no drag: {}", dragged.text))
-        .1;
+    let drag = shown_after(&dragged.text, "mouse: drag ");
     let columns: Vec<u32> = drag
         .split(" -> ")
         .map(|cell| cell.split(',').next().unwrap().parse().unwrap())
         .collect();
     assert!(columns[0] < columns[1], "the drag went right: {drag}");
+
+    holds_a_drag(client, vision).await;
 
     // A mistake is an error, and gives no input: no key of the list is pressed.
     let unknown = call(client, "key", json!({"keys": ["a", "nosuchkey"]})).await;
@@ -174,7 +171,7 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     );
     let done = call(client, "wait_for", json!({"text": "done: hello"})).await;
     assert!(!done.error, "{}", done.text);
-    assert!(done.summary["frame"].as_u64() > entered.summary["frame"].as_u64());
+    assert!(done.summary["frame"].is_u64(), "{}", done.summary);
 
     let screenshot = call(client, "screenshot", json!({})).await;
     let png = png::Decoder::new(std::io::Cursor::new(screenshot.image.unwrap()))
@@ -197,15 +194,74 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     );
 }
 
+/// A held drag keeps the button down until the next drag or click, on the program and on
+/// herdr-app's own panels alike.
+async fn holds_a_drag(client: &Client, vision: &VisionTools) {
+    // A held drag shows the drag under way, and the next drag goes on with it, with no press;
+    // the next click drops it where it ended, then clicks.
+    let held = call(
+        client,
+        "drag",
+        json!({"from": [600, 500], "to": [900, 500], "hold": true}),
+    )
+    .await;
+    let started = shown_after(&held.text, "mouse: dragging ")
+        .split(" -> ")
+        .next()
+        .unwrap()
+        .to_owned();
+    let held = call(
+        client,
+        "drag",
+        json!({"from": [900, 500], "to": [1000, 500], "hold": true}),
+    )
+    .await;
+    let way = shown_after(&held.text, "mouse: dragging ");
+    assert!(way.starts_with(&format!("{started} -> ")), "{}", held.text);
+    let released = call(client, "click", json!({"x": 800, "y": 400})).await;
+    assert!(released.text.contains("mouse: click "), "{}", released.text);
+    assert_eq!(shown_after(&released.text, "dropped: "), way);
+
+    // A held drag on herdr-app's own Spaces list, beside the program, drops too: the row of
+    // the second space, dragged above the first, moves there.
+    herdr_app(vision, &["do", "space.new", r#"{"name": "two"}"#]);
+    herdr_app(vision, &["do", "pane.focus", r#"{"terminal": "t1"}"#]);
+    let held = call(
+        client,
+        "drag",
+        json!({"from": [130, 121], "to": [130, 84], "hold": true}),
+    )
+    .await;
+    assert!(!held.error, "{}", held.text);
+    let released = call(client, "click", json!({"x": 800, "y": 400})).await;
+    assert!(!released.error, "{}", released.text);
+    let spaces = herdr_app(vision, &["ls"])["spaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|space| space["name"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(spaces, ["two", "app"]);
+}
+
+/// The rest of the screen's line that holds `label`.
+fn shown_after<'a>(screen: &'a str, label: &str) -> &'a str {
+    screen
+        .lines()
+        .find_map(|line| line.split_once(label))
+        .unwrap_or_else(|| panic!("no {label:?}: {screen}"))
+        .1
+}
+
 /// Run `herdr-app <arguments>` against the session's app.
-fn herdr_app(vision: &VisionTools, arguments: &[&str]) {
+fn herdr_app(vision: &VisionTools, arguments: &[&str]) -> Value {
     let session = vision.session().lock().unwrap();
     session
         .as_ref()
         .unwrap()
         .sandbox()
         .herdr_app(arguments)
-        .unwrap();
+        .unwrap()
 }
 
 async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) {

@@ -8,6 +8,7 @@
 
 mod clipboard;
 
+use std::cell::Cell;
 use std::hash::{Hash, Hasher};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -54,6 +55,9 @@ pub struct Display {
     window: Window,
     keymap: Keymap,
     clipboard: Clipboard,
+    /// Whether a held drag left the left button down, which the next drag goes on with and
+    /// the next click releases.
+    held: Cell<bool>,
 }
 
 /// The display's keyboard: the keysyms of each keycode, from the lowest.
@@ -106,6 +110,7 @@ impl Display {
             root,
             window,
             keymap,
+            held: Cell::new(false),
         };
         // Keys go to the window under the pointer, which rests at the display's centre: the
         // window covers it, even while its shell centres it again. The display's focus stays
@@ -119,6 +124,11 @@ impl Display {
     pub fn size(&self) -> Result<(u16, u16)> {
         let geometry = self.connection.get_geometry(self.window)?.reply()?;
         Ok((geometry.width, geometry.height))
+    }
+
+    /// Whether a held drag keeps the left button down.
+    pub fn held(&self) -> bool {
+        self.held.get()
     }
 
     /// A hash of the window's pixels: anything that changes on screen changes it.
@@ -182,34 +192,43 @@ impl Display {
     }
 
     /// Click the window's pixel at `x`, `y` with the left button, `modifiers` held: `ctrl`,
-    /// `shift`, `alt`, `super`.
+    /// `shift`, `alt`, `super`. A button a held drag left down is released first, where the
+    /// drag ended, which drops there.
     pub fn click<S: AsRef<str>>(&self, x: u16, y: u16, modifiers: &[S]) -> Result<()> {
-        let held = self.modifiers(modifiers)?;
+        let modifier_keys = self.modifiers(modifiers)?;
         let (x, y) = self.on_root(x, y)?;
+        if self.held.replace(false) {
+            self.fake(BUTTON_RELEASE_EVENT, 1)?;
+        }
         self.move_pointer(x, y)?;
-        self.hold(&held, KEY_PRESS_EVENT)?;
+        self.hold(&modifier_keys, KEY_PRESS_EVENT)?;
         self.fake(BUTTON_PRESS_EVENT, 1)?;
         self.fake(BUTTON_RELEASE_EVENT, 1)?;
-        self.hold(&held, KEY_RELEASE_EVENT)?;
+        self.hold(&modifier_keys, KEY_RELEASE_EVENT)?;
         self.connection.sync()?;
         Ok(())
     }
 
     /// Drag with the left button from the window's pixel `from` to `to`, `modifiers` held, as
     /// a hand does: a press, the pointer's way there in [`DRAG_STEPS`] moves, [`DRAG_PAUSE`]
-    /// apart, then the release.
+    /// apart, then the release, unless `hold` keeps the button down, for a look at the drag
+    /// under way; the modifiers are released all the same. A drag after a held one goes on
+    /// with it from `from`, with no press.
     pub fn drag<S: AsRef<str>>(
         &self,
         from: (u16, u16),
         to: (u16, u16),
         modifiers: &[S],
+        hold: bool,
     ) -> Result<()> {
-        let held = self.modifiers(modifiers)?;
+        let modifier_keys = self.modifiers(modifiers)?;
         let (from_x, from_y) = self.on_root(from.0, from.1)?;
         let (to_x, to_y) = self.on_root(to.0, to.1)?;
         self.move_pointer(from_x, from_y)?;
-        self.hold(&held, KEY_PRESS_EVENT)?;
-        self.fake(BUTTON_PRESS_EVENT, 1)?;
+        self.hold(&modifier_keys, KEY_PRESS_EVENT)?;
+        if !self.held.get() {
+            self.fake(BUTTON_PRESS_EVENT, 1)?;
+        }
         self.connection.sync()?;
         for step in 1..=DRAG_STEPS {
             std::thread::sleep(DRAG_PAUSE);
@@ -219,9 +238,12 @@ impl Display {
             };
             self.move_pointer(along(from_x, to_x)?, along(from_y, to_y)?)?;
         }
-        std::thread::sleep(DRAG_PAUSE);
-        self.fake(BUTTON_RELEASE_EVENT, 1)?;
-        self.hold(&held, KEY_RELEASE_EVENT)?;
+        self.held.set(hold);
+        if !hold {
+            std::thread::sleep(DRAG_PAUSE);
+            self.fake(BUTTON_RELEASE_EVENT, 1)?;
+        }
+        self.hold(&modifier_keys, KEY_RELEASE_EVENT)?;
         self.connection.sync()?;
         Ok(())
     }
