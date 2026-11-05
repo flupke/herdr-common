@@ -4,7 +4,6 @@
 
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
@@ -136,7 +135,11 @@ impl Holder {
                 Ok(Value::String(file.to_string_lossy().into_owned()))
             }
             Request::Mod(directory) => install_mod(sandbox, &directory),
-            Request::Run(arguments) => run(sandbox, &arguments),
+            Request::Run(arguments) => {
+                let (program, arguments) =
+                    arguments.split_first().context("run takes a program")?;
+                Ok(Value::String(sandbox.run(Path::new(program), arguments)?))
+            }
             Request::Stop => unreachable!("the accepting thread stops the sandbox"),
         }
     }
@@ -191,24 +194,4 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Run a program in the sandbox, and return its output, as it printed it.
-fn run(sandbox: &AppSandbox, arguments: &[String]) -> Result<Value> {
-    let (program, arguments) = arguments.split_first().context("run takes a program")?;
-    let output = sandbox
-        .command(Path::new(program))
-        .args(arguments)
-        .stdin(Stdio::null())
-        .output()
-        .wrap_err_with(|| format!("cannot run {program}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    ensure!(
-        output.status.success(),
-        "{program} failed ({}): {}{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr).trim(),
-        stdout.trim()
-    );
-    Ok(Value::String(stdout.into_owned()))
 }

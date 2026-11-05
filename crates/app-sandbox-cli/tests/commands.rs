@@ -58,6 +58,12 @@ fn commands_drive_the_sandbox_that_start_left_running() {
         serde_json::json!({"ok": true})
     );
 
+    // `run` prints a program's output as it printed it, even when that output is JSON.
+    assert_eq!(
+        succeed(&["run", name, "printf", r#"{"a":1}"#]),
+        "{\"a\":1}\n"
+    );
+
     let shots = tempfile::tempdir().unwrap();
     let shot = shots.path().join("shot.png");
     succeed(&["shot", name, shot.to_str().unwrap()]);

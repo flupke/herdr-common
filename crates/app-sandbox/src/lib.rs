@@ -330,7 +330,7 @@ impl AppSandbox {
 
     /// Whether the app's window answers, its layout loaded from the core ([`LAYOUT_PROBE`]).
     fn shows_layout(&self) -> bool {
-        match self.run(&self.programs.app, &LAYOUT_PROBE) {
+        match self.run_json(&self.programs.app, &LAYOUT_PROBE) {
             Ok(_) => true,
             Err(error) => error.to_string().contains("no space"),
         }
@@ -344,13 +344,13 @@ impl AppSandbox {
             !arguments.is_empty(),
             "herdr-app takes a command (do, ls, status, commands, shot): alone, it opens a window"
         );
-        self.run(&self.programs.app, arguments)
+        self.run_json(&self.programs.app, arguments)
     }
 
     /// Run `hc <arguments>` against the sandbox's core, such as `ls`, `read t1` or `send t1
     /// 'ls'`. Returns its JSON output, or its text when that is no JSON.
     pub fn hc<S: AsRef<str>>(&self, arguments: &[S]) -> Result<Value> {
-        self.run(&self.programs.hc, arguments)
+        self.run_json(&self.programs.hc, arguments)
     }
 
     /// A screenshot of the app's window, as PNG: `herdr-app shot`, which renders the window's
@@ -366,7 +366,10 @@ impl AppSandbox {
         Ok(png)
     }
 
-    fn run<S: AsRef<str>>(&self, program: &Path, arguments: &[S]) -> Result<Value> {
+    /// Run `program <arguments>` in the sandbox, as [`command`](Self::command) does, wait for it
+    /// to end, and return its standard output, as it printed it. Fails unless it succeeds, with
+    /// what it printed.
+    pub fn run<S: AsRef<str>>(&self, program: &Path, arguments: &[S]) -> Result<String> {
         let arguments: Vec<&str> = arguments.iter().map(AsRef::as_ref).collect();
         let name = program.file_name().unwrap_or_default().to_string_lossy();
         let output = self
@@ -374,7 +377,7 @@ impl AppSandbox {
             .args(&arguments)
             .stdin(Stdio::null())
             .output()
-            .wrap_err_with(|| format!("cannot run {name}"))?;
+            .wrap_err_with(|| format!("cannot run {}", program.display()))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         ensure!(
             output.status.success(),
@@ -384,7 +387,13 @@ impl AppSandbox {
             String::from_utf8_lossy(&output.stderr).trim(),
             stdout.trim()
         );
-        Ok(serde_json::from_str(&stdout).unwrap_or_else(|_| Value::String(stdout.into_owned())))
+        Ok(stdout.into_owned())
+    }
+
+    /// [`run`](Self::run), its output read as JSON, or as text when that is no JSON.
+    fn run_json<S: AsRef<str>>(&self, program: &Path, arguments: &[S]) -> Result<Value> {
+        let stdout = self.run(program, arguments)?;
+        Ok(serde_json::from_str(&stdout).unwrap_or(Value::String(stdout)))
     }
 
     /// A command that runs `program` in the sandbox, with the sandbox's environment alone, in
