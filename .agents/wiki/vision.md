@@ -43,6 +43,8 @@ Checked on herdr-app 0.1.13 and hc 0.1.18:
   nothing. A program's drag survives it.
 - In `herdr-app do <command> '<json>'`, `argv` is a JSON array; a string is ignored, and the
   terminal runs a shell.
+- `hc events` ends with its core: `Vision::restart` starts a new one after a core restart or
+  a reboot.
 - In bubblewrap, `hc events` runs under nsenter, which forks: killing the nsenter leaves it
   running until the sandbox stops, which is why `Vision::stop` drops the event watch last.
 

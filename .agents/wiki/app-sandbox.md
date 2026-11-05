@@ -34,10 +34,38 @@ Three layers, in three files; a change to one leans on the others:
 - Plain isolation: a process that both clears its environment and leaves its parents (`setsid
   env -i`) escapes the mark and outlives the sandbox; in bubblewrap the kernel ends it.
 
+## Restarts
+
+`AppSandbox::restart` (`restart.rs`) kills as a reboot does. What herdr-app 0.1.13 and hc 0.1.18
+do then, which the code leans on:
+
+- The core runs under the window (`herdr-app` → `hc connect` → `hc serve` → `hc hold` →
+  programs), yet outlives a `SIGKILL` of the window alone: a reboot kills the window's whole
+  tree, then every hc process left.
+- Any `hc` call starts a core when none runs, and the window reconnects to whichever core runs.
+  After a reboot the kept terminals show `reason: stopped_by_restart` until the new core gives
+  them shells.
+- After a core kill the window logs `reconnected to the core` in `app.log` (its only sign),
+  then loads its layout about half a second later. Until then `herdr-app do` fails ("This
+  machine's layout is unavailable", "doc.get: lost the core"), while `herdr-app status` may
+  report no error at all. `LAYOUT_PROBE` in `lib.rs` asks for the layout, also at start.
+- A kept terminal's shell comes back a second or two after the layout. The window's view of
+  it shows `[reconnecting to core…]` and drops the keys typed into it until it reattached,
+  within a second of the shell in every run; no event, log line or status field says when.
+  Type into a kept terminal through the window only once its pixels show the shell, or reach
+  it with `hc send`.
+- A process stopped with `SIGSTOP` under nsenter stops nsenter too, which reaps it only once
+  continued: `kill_trees` continues each stopped nsenter whose child it killed, until it
+  reaped the child, and signals nothing else outside the trees.
+- In bubblewrap the killed processes stay zombies of the holder (`cat`, which reaps nothing)
+  until the sandbox stops: `processes()` lists them, with no `exe`.
+
 ## Testing a change
 
-`make test CRATES=app-sandbox` runs the sandbox in each isolation against the pinned tools. A
-change to what keeps it off the user's display also needs a run beside the user's session: list
+`make test CRATES=app-sandbox` runs the sandbox in each isolation against the pinned tools;
+`make test CRATES=vision-mcp` restarts its core, then reboots and opens the window again, in
+each isolation, and drives a probe after each. A change to what keeps it off the user's display
+also needs a run beside the user's session: list
 the windows of their desktop and which one has the focus, every half second while the tests run,
 and check the list never changes. On sway:
 

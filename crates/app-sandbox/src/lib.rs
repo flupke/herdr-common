@@ -11,6 +11,8 @@
 mod bubble;
 mod environment;
 mod plain;
+mod process;
+mod restart;
 
 use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Write};
@@ -26,6 +28,7 @@ use serde_json::Value;
 use bubble::Bubble;
 use environment::{Inputs, WAYLAND_SOCKET};
 use plain::Plain;
+pub use restart::Restart;
 
 /// The app's home (`HERDR_APP_HOME`) in the sandbox's directory.
 pub const APP_HOME: &str = "config/herdr-app";
@@ -33,12 +36,23 @@ pub const APP_HOME: &str = "config/herdr-app";
 /// What Weston writes once its Xwayland listens, followed by the display's name (`:0`).
 const DISPLAY_READY: &str = "xserver listening on display ";
 
-/// How long the sandbox waits for its display or its app before it fails: a guard that fires
-/// only on a failure.
+/// How long the sandbox waits for its display, its app or the end of what a restart killed
+/// before it fails: a guard that fires only on a failure.
 const GUARD: Duration = Duration::from_secs(60);
 
-/// How often [`AppSandbox::start`] asks the app whether it answers: it says nothing on its own.
-const STATUS_POLL: Duration = Duration::from_millis(100);
+/// How often the sandbox asks the app whether its window shows the core's layout, as it starts
+/// and restarts: it says nothing on its own.
+const LAYOUT_POLL: Duration = Duration::from_millis(100);
+
+/// The arguments of `herdr-app do` that ask the window whether its layout is loaded: the rename
+/// of a space no layout holds, which changes nothing. The window refuses it as `no space`
+/// once it loaded its layout from the core, and as unavailable before ("This machine's layout
+/// is unavailable", "doc.get: lost the core").
+const LAYOUT_PROBE: [&str; 3] = [
+    "do",
+    "space.rename",
+    r#"{"id": "sp00000000000000000000000000000000", "name": "layout probe"}"#,
+];
 
 /// The programs a sandbox runs. [`Programs::pinned`] gives the dev shell's pinned releases,
 /// which tests run; a caller may run another herdr-app, such as its own build. Each path is
@@ -143,8 +157,8 @@ pub struct AppSandbox {
 }
 
 impl AppSandbox {
-    /// Start the display, then the app, which starts its core, and return once the app answers
-    /// `herdr-app status`.
+    /// Start the display, then the app, which starts its core, and return once the app's window
+    /// shows the core's layout: `herdr-app do` changes it.
     pub fn start(programs: &Programs, options: &Options) -> Result<Self> {
         for path in [
             &programs.app,
@@ -275,7 +289,7 @@ impl AppSandbox {
             .wrap_err("cannot start herdr-app")?;
         let deadline = Instant::now() + GUARD;
         let answered = loop {
-            if self.run(&self.programs.app, &["status"]).is_ok() {
+            if self.shows_layout() {
                 break Ok(());
             }
             if let Some(status) = app.try_wait()? {
@@ -283,16 +297,24 @@ impl AppSandbox {
             }
             if Instant::now() >= deadline {
                 break Err(eyre::eyre!(
-                    "the sandbox's herdr-app did not answer within {GUARD:?}"
+                    "the sandbox's herdr-app did not show the core's layout within {GUARD:?}"
                 ));
             }
-            std::thread::sleep(STATUS_POLL);
+            std::thread::sleep(LAYOUT_POLL);
         };
         self.app = Some(app);
         answered.map_err(|error| {
             let log = std::fs::read_to_string(&path).unwrap_or_default();
             error.wrap_err(format!("app.log:\n{log}"))
         })
+    }
+
+    /// Whether the app's window answers, its layout loaded from the core ([`LAYOUT_PROBE`]).
+    fn shows_layout(&self) -> bool {
+        match self.run(&self.programs.app, &LAYOUT_PROBE) {
+            Ok(_) => true,
+            Err(error) => error.to_string().contains("no space"),
+        }
     }
 
     /// Run `herdr-app <arguments>` against the sandbox's app: `do <command> [json]`, `ls`,
@@ -433,7 +455,7 @@ impl AppSandbox {
             && let Some(mut weston) = self.weston.take()
         {
             // Weston removes Xwayland's socket and lock from the host's /tmp as it stops.
-            plain::signal(rustix::process::Signal::TERM, &[weston.id()]);
+            process::signal(rustix::process::Signal::TERM, &[weston.id()]);
             weston.wait().wrap_err("cannot wait for Weston")?;
         }
         match &mut self.jail {
@@ -466,16 +488,6 @@ impl Jail {
             Self::Plain(plain) => plain.inside(),
         }
     }
-}
-
-/// Every process's PID, from `/proc`.
-fn processes() -> Vec<u32> {
-    let Ok(entries) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    entries
-        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
-        .collect()
 }
 
 /// `path` opened to append to, created when missing: a log that keeps each run's lines.

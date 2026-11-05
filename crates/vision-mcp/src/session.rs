@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use app_sandbox::{AppSandbox, Stopped};
+use app_sandbox::{AppSandbox, Restart, Stopped};
 use eyre::{ContextCompat, Result, bail, ensure};
 use serde::Serialize;
 use serde_json::Value;
@@ -98,10 +98,14 @@ impl Screen {
     }
 }
 
+/// The error of a tool that needs the window while a reboot keeps it closed.
+const WINDOW_CLOSED: &str = "the window is closed since a reboot: restart the window first";
+
 /// A running vision session.
 pub struct Vision {
-    /// Dropped before the sandbox: the connection leaves the display before it ends.
-    display: Display,
+    /// Dropped before the sandbox: the connection leaves the display before it ends. `None`
+    /// while a reboot keeps the window closed.
+    display: Option<Display>,
     sandbox: AppSandbox,
     /// Dropped after the sandbox, which ends the `hc events` it reads.
     frames: FrameWatch,
@@ -114,14 +118,9 @@ impl Vision {
     /// app's own setup, its spaces and the programs in them, goes before or after.
     pub fn start(sandbox: AppSandbox) -> Result<Self> {
         let frames = FrameWatch::start(&sandbox)?;
-        let display = Display::connect(&sandbox.display_socket()?, WINDOW_TITLE, WINDOW_GUARD)
-            .map_err(|error| {
-                let log = std::fs::read_to_string(sandbox.directory().join("app.log"))
-                    .unwrap_or_default();
-                error.wrap_err(format!("the app's window did not show; its log:\n{log}"))
-            })?;
+        let display = connect(&sandbox)?;
         Ok(Self {
-            display,
+            display: Some(display),
             sandbox,
             frames,
             requests: 0,
@@ -133,9 +132,42 @@ impl Vision {
         &self.sandbox
     }
 
+    /// Restart the app's core, its window, or both, as `what` says
+    /// ([`AppSandbox::restart`]), and see and drive the app again: the session follows the new
+    /// core's terminals, and connects to the window once it opens again. After a core restart
+    /// and a window's, it returns once the window's pixels settled, or after two seconds. A
+    /// kept terminal's shell comes back a moment later, and its view in the window drops keys
+    /// until it reattached (`.agents/wiki/app-sandbox.md`, Restarts). While a
+    /// [`Restart::Reboot`] keeps the window closed, the tools that need it fail, and `screen`
+    /// and `wait_for` read a terminal named by its address.
+    pub fn restart(&mut self, what: Restart) -> Result<()> {
+        let restarted = self.sandbox.restart(what);
+        if what == Restart::Reboot && !self.sandbox.window_open() {
+            self.display = None;
+        }
+        restarted?;
+        match what {
+            Restart::Core => self.frames = FrameWatch::start(&self.sandbox)?,
+            Restart::Reboot => {
+                self.frames = FrameWatch::start(&self.sandbox)?;
+                return Ok(());
+            }
+            Restart::Window => self.display = Some(connect(&self.sandbox)?),
+        }
+        // A kept terminal may still show the core lost for a moment.
+        settle(self.display()?)?;
+        Ok(())
+    }
+
+    /// The connection to the window's display, unless a reboot keeps the window closed.
+    fn display(&self) -> Result<&Display> {
+        self.display.as_ref().context(WINDOW_CLOSED)
+    }
+
     /// The terminal in the focused pane, by its hc address; `None` when the focused pane shows
     /// none, as a mod's.
     pub fn focused_terminal(&self) -> Result<Option<String>> {
+        self.display()?;
         let status = self.sandbox.herdr_app(&["status"])?;
         let Some(pane) = status["focused_pane"].as_str() else {
             return Ok(None);
@@ -185,14 +217,14 @@ impl Vision {
         let speaking = self
             .focused_terminal()?
             .filter(|terminal| self.frames.frames().latest(terminal).is_some());
-        let before = self.display.fingerprint()?;
+        let before = self.display()?.fingerprint()?;
         self.give(input)?;
         // An input that moved the focus, such as a click on another pane, leaves the request
         // nobody to read it. The paste key would leave a held drag on herdr-app's panels unable
         // to drop.
         let acknowledged = match speaking {
             Some(terminal)
-                if !self.display.held()
+                if !self.display()?.held()
                     && self.focused_terminal()?.as_deref() == Some(&terminal) =>
             {
                 self.acknowledge(&terminal)?
@@ -211,17 +243,18 @@ impl Vision {
     }
 
     fn give(&self, input: &Input<'_>) -> Result<()> {
+        let display = self.display()?;
         match input {
-            Input::Keys(keys) => self.display.keys(keys),
-            Input::Text(text) => self.display.type_text(text),
-            Input::Paste(text) => self.display.paste(text, TERMINAL_PASTE),
-            Input::Click { x, y, modifiers } => self.display.click(*x, *y, modifiers),
+            Input::Keys(keys) => display.keys(keys),
+            Input::Text(text) => display.type_text(text),
+            Input::Paste(text) => display.paste(text, TERMINAL_PASTE),
+            Input::Click { x, y, modifiers } => display.click(*x, *y, modifiers),
             Input::Drag {
                 from,
                 to,
                 modifiers,
                 hold,
-            } => self.display.drag(*from, *to, modifiers, *hold),
+            } => display.drag(*from, *to, modifiers, *hold),
         }
     }
 
@@ -231,7 +264,7 @@ impl Vision {
     fn acknowledge(&mut self, terminal: &str) -> Result<Option<Reaction>> {
         self.requests += 1;
         let request = self.requests;
-        self.display
+        self.display()?
             .paste(&acknowledgement_request(request), TERMINAL_PASTE)?;
         match self
             .frames
@@ -249,9 +282,10 @@ impl Vision {
 
     /// Wait for the window's pixels to differ from `before`, then to settle.
     fn pixels(&self, before: u64) -> Result<Reaction> {
+        let display = self.display()?;
         let deadline = Instant::now() + CHANGE_GUARD;
         let changed = loop {
-            if self.display.fingerprint()? != before {
+            if display.fingerprint()? != before {
                 break true;
             }
             if Instant::now() >= deadline {
@@ -259,23 +293,7 @@ impl Vision {
             }
             std::thread::sleep(SCREEN_POLL);
         };
-        let deadline = Instant::now() + SETTLE_GUARD;
-        let mut last = self.display.fingerprint()?;
-        let mut since = Instant::now();
-        let settled = loop {
-            if since.elapsed() >= SETTLE_QUIET {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                break false;
-            }
-            std::thread::sleep(SCREEN_POLL);
-            let now = self.display.fingerprint()?;
-            if now != last {
-                last = now;
-                since = Instant::now();
-            }
-        };
+        let settled = settle(display)?;
         Ok(Reaction::Pixels { changed, settled })
     }
 
@@ -340,6 +358,7 @@ impl Vision {
 
     /// A screenshot of the app's window, as PNG: herdr-app's own rendering of its last frame.
     pub fn screenshot(&self) -> Result<Vec<u8>> {
+        self.display()?;
         self.sandbox.shot()
     }
 
@@ -356,6 +375,36 @@ impl Vision {
         drop(frames);
         stopped
     }
+}
+
+/// Wait for the window's pixels to stay unchanged for [`SETTLE_QUIET`], for at most
+/// [`SETTLE_GUARD`]: whether they did.
+fn settle(display: &Display) -> Result<bool> {
+    let deadline = Instant::now() + SETTLE_GUARD;
+    let mut last = display.fingerprint()?;
+    let mut since = Instant::now();
+    loop {
+        if since.elapsed() >= SETTLE_QUIET {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(SCREEN_POLL);
+        let now = display.fingerprint()?;
+        if now != last {
+            last = now;
+            since = Instant::now();
+        }
+    }
+}
+
+/// Connect to the display of `sandbox`, once its window fills it.
+fn connect(sandbox: &AppSandbox) -> Result<Display> {
+    Display::connect(&sandbox.display_socket()?, WINDOW_TITLE, WINDOW_GUARD).map_err(|error| {
+        let log = std::fs::read_to_string(sandbox.directory().join("app.log")).unwrap_or_default();
+        error.wrap_err(format!("the app's window did not show; its log:\n{log}"))
+    })
 }
 
 /// The terminal `herdr-app ls` lists in `pane`.

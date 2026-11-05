@@ -39,12 +39,14 @@ vision-signal = { git = "https://github.com/flupke/herdr-common" }
 ## Crates
 
 - `app-sandbox`: a private herdr-app on a headless Weston display, in bubblewrap, for tests
-  that drive and screenshot the app without touching your display or focus.
+  that drive and screenshot the app without touching your display or focus. It restarts the
+  app's core, its window, or both, as a reboot would.
 - `app-sandbox-cli`: the `app-sandbox` command, which keeps an app sandbox running across
   shell commands, for agents.
 - `vision-mcp`: the vision MCP core, an agent's eyes and hands on an app in the app sandbox:
   `screen`, `screenshot`, `key`, `type`, `click`, `drag` and `wait_for`, which an app's own MCP
-  server routes beside its own tools.
+  server routes beside its own tools. A session sees and drives the app again after each
+  restart.
 - `vision-display`: the sandbox's X display driven as its user would, through XTEST and the
   clipboard: the core's hands.
 - `vision-signal`: the frame markers and acknowledgements an app writes to its terminal, so the

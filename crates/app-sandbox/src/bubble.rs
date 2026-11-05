@@ -140,10 +140,15 @@ impl Bubble {
         command
     }
 
+    /// The nsenter that runs each [`command`](Self::command).
+    pub(crate) fn nsenter(&self) -> &Path {
+        &self.nsenter
+    }
+
     /// The processes in the environment's PID namespace, its first one included, by host PID.
     pub(crate) fn processes(&self) -> Vec<u32> {
         let name = format!("pid:[{}]", self.namespace);
-        crate::processes()
+        crate::process::all()
             .into_iter()
             .filter(|pid| {
                 std::fs::read_link(format!("/proc/{pid}/ns/pid"))

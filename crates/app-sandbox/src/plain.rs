@@ -12,7 +12,9 @@ use std::path::Path;
 use std::process::Command;
 
 use eyre::{Context, Result};
-use rustix::process::{Pid, Signal, kill_process};
+use rustix::process::Signal;
+
+use crate::process;
 
 /// The variable that marks the sandbox's processes, set to its directory.
 const MARK: &str = "APP_SANDBOX";
@@ -68,9 +70,9 @@ impl Plain {
 
     /// The processes that carry the mark, and every process under them, by PID.
     pub(crate) fn processes(&self) -> Vec<u32> {
-        let parents: BTreeMap<u32, u32> = crate::processes()
+        let parents: BTreeMap<u32, u32> = process::all()
             .into_iter()
-            .filter_map(|pid| Some((pid, parent(pid)?)))
+            .filter_map(|pid| Some((pid, process::parent(pid)?)))
             .collect();
         let mut found: BTreeSet<u32> = parents
             .keys()
@@ -114,10 +116,10 @@ impl Plain {
             if found.is_empty() {
                 break;
             }
-            signal(Signal::STOP, &found);
+            process::signal(Signal::STOP, &found);
             stopped.extend(found);
         }
-        signal(Signal::KILL, &stopped.into_iter().collect::<Vec<_>>());
+        process::signal(Signal::KILL, &stopped.into_iter().collect::<Vec<_>>());
         let path = directory.path().to_owned();
         directory
             .close()
@@ -129,22 +131,4 @@ impl Drop for Plain {
     fn drop(&mut self) {
         let _ = self.end();
     }
-}
-
-/// Send `signal` to each process of `pids`. A process that ended meanwhile is no error.
-pub(crate) fn signal(signal: Signal, pids: &[u32]) {
-    for pid in pids {
-        if let Some(pid) = i32::try_from(*pid).ok().and_then(Pid::from_raw) {
-            let _ = kill_process(pid, signal);
-        }
-    }
-}
-
-/// The parent of the process `pid`, from `/proc/<pid>/stat`: none once it ended.
-fn parent(pid: u32) -> Option<u32> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // The command's name, in parentheses, may hold spaces and parentheses: the fields after
-    // the last `)` are the state, then the parent.
-    let (_, fields) = stat.rsplit_once(')')?;
-    fields.split_whitespace().nth(1)?.parse().ok()
 }

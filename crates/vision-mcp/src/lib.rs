@@ -12,5 +12,6 @@ mod screen;
 mod session;
 mod tools;
 
+pub use app_sandbox::Restart;
 pub use session::{Input, Reaction, Screen, Vision};
 pub use tools::{INSTRUCTIONS, VisionTools};

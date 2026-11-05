@@ -77,4 +77,5 @@ without a timeout of its own: nextest ends one still running after two minutes
 A screen sends no event: a terminal emulated for a Herdr client, and a private herdr-app's
 window. A test waits for a text to show there, or for the window's pixels to change and
 settle; those are the only polls a test may run. herdr-app says nothing when it is ready either:
-`AppSandbox::start` asks `herdr-app status` until it answers.
+`AppSandbox::start` and a core or window restart ask it for its layout until it shows
+([The app sandbox](app-sandbox.md), Restarts).

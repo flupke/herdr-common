@@ -1,8 +1,9 @@
 //! An agent drives apps in the app sandbox through the vision tools, as an app's MCP server
 //! serves them: a program that speaks vision-signal, whose every action returns the frame that
-//! shows its reaction, and a shell, which speaks nothing and is seen through its pixels.
+//! shows its reaction, and a shell, which speaks nothing and is seen through its pixels. The
+//! tools see and drive the app again after each restart of its core, its window, or both.
 
-use app_sandbox::{AppSandbox, Options, Programs};
+use app_sandbox::{AppSandbox, Isolation, Options, Programs, Restart};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 use rmcp::service::RunningService;
@@ -68,9 +69,100 @@ type Client = RunningService<RoleClient, ()>;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn drives_apps_in_the_sandbox_through_the_tools() {
-    let (client, vision) = start().await;
+    let (client, vision) = start(Isolation::Bubblewrap).await;
     drives_a_program_that_speaks_vision_signal(&client, &vision).await;
     sees_a_shell_through_its_pixels(&client, &vision).await;
+    stop(client, &vision).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sees_and_drives_the_app_after_each_restart_in_bubblewrap() {
+    sees_and_drives_the_app_after_each_restart(Isolation::Bubblewrap).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sees_and_drives_the_app_after_each_restart_in_plain_isolation() {
+    sees_and_drives_the_app_after_each_restart(Isolation::Plain).await;
+}
+
+async fn sees_and_drives_the_app_after_each_restart(isolation: Isolation) {
+    let (client, vision) = start(isolation).await;
+    let shown = call(&client, "wait_for", json!({"text": "vision probe"})).await;
+    assert!(!shown.error, "{}", shown.text);
+
+    let probe = shown.summary["terminal"].as_str().unwrap().to_owned();
+
+    // A core restart ends the probe with every program of the core's terminals: its terminal
+    // comes back as a shell, at its address, and the window runs a new core.
+    restart(&vision, Restart::Core).await;
+    sees_the_kept_shell(&client, &probe).await;
+    let probe = drives_a_new_probe(&client, &vision).await;
+
+    // While a reboot keeps the window closed, what needs the window is an error that says
+    // so, and the core started alone shows its terminals by their address.
+    restart(&vision, Restart::Reboot).await;
+    let pressed = call(&client, "key", json!({"keys": ["a"]})).await;
+    assert!(
+        pressed.error && pressed.text.contains("window is closed"),
+        "{}",
+        pressed.text
+    );
+    sees_the_kept_shell(&client, &probe).await;
+
+    restart(&vision, Restart::Window).await;
+    drives_a_new_probe(&client, &vision).await;
+    let screenshot = call(&client, "screenshot", json!({})).await;
+    let png = png::Decoder::new(std::io::Cursor::new(screenshot.image.unwrap()))
+        .read_info()
+        .unwrap();
+    assert_eq!((png.info().width, png.info().height), (1200, 800));
+    stop(client, &vision).await;
+}
+
+/// Restart the session's app as `what` says.
+async fn restart(vision: &VisionTools, what: Restart) {
+    let session = vision.session().clone();
+    tokio::task::spawn_blocking(move || {
+        session
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .restart(what)
+            .unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+/// Wait for the shell that replaced the probe in `terminal` to show its prompt, which the probe
+/// never shows: the restart ended the probe, and kept its terminal at its address. The window's
+/// view of the terminal takes input only a moment later, once it reattached
+/// (`.agents/wiki/app-sandbox.md`), so the test drives a new probe instead.
+async fn sees_the_kept_shell(client: &Client, terminal: &str) {
+    let prompt = call(
+        client,
+        "wait_for",
+        json!({"text": "$", "terminal": terminal, "timeout_ms": 30_000}),
+    )
+    .await;
+    assert!(!prompt.error, "{}", prompt.text);
+}
+
+/// Open a space that runs a new probe, and drive it: the frame that acknowledges the typing
+/// shows it. Returns the probe's terminal.
+async fn drives_a_new_probe(client: &Client, vision: &VisionTools) -> String {
+    herdr_app(vision, &["do", "space.new", &probe_space()]);
+    let shown = call(client, "wait_for", json!({"text": "vision probe"})).await;
+    assert!(!shown.error, "{}", shown.text);
+    let typed = call(client, "type", json!({"text": "again"})).await;
+    assert!(typed.summary["reaction"]["acknowledged"]["frame"].is_u64());
+    assert!(typed.text.contains("typed: again"), "{}", typed.text);
+    typed.summary["terminal"].as_str().unwrap().to_owned()
+}
+
+/// Stop the session, which leaves no process behind.
+async fn stop(client: Client, vision: &VisionTools) {
     client.cancel().await.unwrap();
     let stopped = vision
         .session()
@@ -83,22 +175,24 @@ async fn drives_apps_in_the_sandbox_through_the_tools() {
     assert_eq!(stopped.processes, Vec::<u32>::new());
 }
 
-/// A sandbox whose first space runs the probe, served by an app's MCP server, and a client
-/// of that server.
-async fn start() -> (Client, VisionTools) {
+/// The arguments of `space.new` for a space that runs the probe.
+fn probe_space() -> String {
+    let app = env!("CARGO_BIN_EXE_vision-probe");
+    let argv = json!(["sh", "-c", format!("stty raw -echo && exec '{app}'")]);
+    json!({"name": "app", "argv": argv}).to_string()
+}
+
+/// A sandbox in `isolation` whose first space runs the probe, served by an app's MCP server,
+/// and a client of that server.
+async fn start(isolation: Isolation) -> (Client, VisionTools) {
     let options = Options {
+        isolation,
         display_size: (1200, 800),
         ..Options::default()
     };
     let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &options).unwrap();
-    let app = env!("CARGO_BIN_EXE_vision-probe");
-    let argv = json!(["sh", "-c", format!("stty raw -echo && exec '{app}'")]);
     sandbox
-        .herdr_app(&[
-            "do",
-            "space.new",
-            &json!({"name": "app", "argv": argv}).to_string(),
-        ])
+        .herdr_app(&["do", "space.new", &probe_space()])
         .unwrap();
     let vision = VisionTools::new();
     vision
