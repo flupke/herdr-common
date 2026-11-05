@@ -201,15 +201,7 @@ impl AppSandbox {
         // never the user's.
         std::os::unix::fs::symlink(&self.programs.hc, root.join("bin/hc"))?;
         std::os::unix::fs::symlink(&self.programs.app, root.join("bin/herdr-app"))?;
-        // A link the app would open goes to `opened.log` instead of the user's browser.
-        let opened = self.inside().join("opened.log");
-        write_executable(
-            &root.join("bin/xdg-open"),
-            &format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$*\" >>{}\n",
-                shell_quote(&opened.to_string_lossy())
-            ),
-        )?;
+        write_executable(&root.join("bin/xdg-open"), &xdg_open(self.inside()))?;
         // The app opens as a person's who skipped its first-run welcome and already ran this
         // version: no welcome, no "Updated to" pill over its status bar.
         let app_home = root.join(APP_HOME);
@@ -542,6 +534,42 @@ fn create_directory(path: &Path, mode: u32) -> Result<()> {
     std::fs::create_dir(path)?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
     Ok(())
+}
+
+/// The sandbox's `xdg-open`, for the sandbox at `inside`, which the app runs on Ctrl+click on a
+/// link: as `xdg-open`'s generic mode does on a desktop, it runs the first desktop entry of
+/// `data/applications` (`XDG_DATA_HOME`) whose `MimeType` claims `x-scheme-handler/<scheme>`
+/// for the link's scheme, its `Exec` split on spaces and `%u` given the link, such as an app's
+/// handler of its own links. Any other link goes to `opened.log` instead of the user's browser.
+fn xdg_open(inside: &Path) -> String {
+    let applications = shell_quote(&inside.join("data/applications").to_string_lossy());
+    let opened = shell_quote(&inside.join("opened.log").to_string_lossy());
+    format!(
+        r#"#!/bin/sh
+link="$1"
+case $link in
+*:*)
+  scheme="${{link%%:*}}"
+  for entry in {applications}/*.desktop; do
+    sed -n 's/^MimeType=//p' "$entry" 2>/dev/null | tr ';' '\n' |
+      grep -Fqx "x-scheme-handler/$scheme" || continue
+    command=$(sed -n 's/^Exec=//p' "$entry" | head -n 1)
+    [ -n "$command" ] || continue
+    set -f
+    set -- $command
+    set +f
+    for argument; do
+      shift
+      [ "$argument" = %u ] && argument="$link"
+      set -- "$@" "$argument"
+    done
+    exec "$@"
+  done
+  ;;
+esac
+printf '%s\n' "$*" >>{opened}
+"#
+    )
 }
 
 fn write_executable(path: &Path, text: &str) -> Result<()> {
