@@ -1,19 +1,6 @@
-//! The bubblewrap environment of [`Isolation::Bubblewrap`](crate::Isolation::Bubblewrap): a
-//! PID namespace, a network namespace with a loopback alone, and a mount namespace whose `/tmp`
-//! is a tmpfs of its own. Every process of the sandbox runs in it, and every file it writes
-//! goes in the tmpfs. Once the environment ends, the kernel kills each process left in it and
-//! frees the tmpfs, also when the process that holds the sandbox dies by `SIGKILL`: nothing is
-//! ever deleted, and nothing is created outside.
-//!
-//! The tmpfs is mounted on `/tmp` rather than on a new empty directory: such a directory would
-//! outlive a `SIGKILL` of the holder, which then cannot remove it. The network namespace keeps
-//! the X display's abstract socket (`@/tmp/.X11-unix/X0`) from clashing with the user's
-//! displays or reaching them, and keeps the app off the network. The host reaches a port of its
-//! loopback through a [`Forward`](crate::forward::Forward), and its files through
-//! [`outside`](Bubble::outside).
-//!
-//! The rest of the host's filesystem is shared, except the directories the environment masks:
-//! each shows empty inside, under a tmpfs of its own, while the host's copy stays as it was.
+//! The bubble: the bubblewrap environment of
+//! [`Isolation::Bubblewrap`](crate::Isolation::Bubblewrap), which a caller may also run alone,
+//! with no herdr-app, such as for a Herdr server of its own.
 
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader};
@@ -26,9 +13,23 @@ use serde::Deserialize;
 /// Where the tmpfs is, inside: the sandbox's directory as its processes see it.
 const INSIDE: &str = "/tmp";
 
-/// A running bubblewrap environment. It ends once it lets go of its holder's standard input: on
-/// [`end`](Self::end), on a drop, and when the process that holds it dies, since the kernel then
-/// closes the pipe.
+/// A running bubble: a bubblewrap environment with a PID namespace and a mount namespace of its
+/// own, whose `/tmp` ([`inside`](Self::inside)) is a tmpfs of its own, and a network the caller
+/// picks ([`Network`]). Every process [`command`](Self::command) starts runs in it, and every
+/// file it writes in `/tmp` goes in the tmpfs, which the host reaches through
+/// [`outside`](Self::outside). Once the bubble ends, the kernel kills each process left in it and
+/// frees the tmpfs, also when the process that holds it dies by `SIGKILL`: nothing is ever
+/// deleted, and nothing is created outside.
+///
+/// The rest of the host's filesystem is shared, except the directories the bubble masks, such
+/// as the [`user_directories`](crate::user_directories): each shows empty inside, under a tmpfs
+/// of its own, while the host's copy stays as it was.
+///
+/// It ends once it lets go of its holder's standard input: on [`end`](Self::end), on a drop, and
+/// when the process that holds it dies, since the kernel then closes the pipe.
+///
+/// The tmpfs is mounted on `/tmp` rather than on a new empty directory: such a directory would
+/// outlive a `SIGKILL` of the holder, which then cannot remove it.
 ///
 /// The holder, `cat` on the pipe, runs as the namespace's first process (`--as-pid-1`): once it
 /// ends, the kernel kills the rest of the namespace. bwrap's own first process would instead
@@ -36,7 +37,7 @@ const INSIDE: &str = "/tmp";
 ///
 /// bwrap's `--die-with-parent` is left out: it sets `PR_SET_PDEATHSIG`, which fires when the
 /// *thread* that spawned bwrap ends, such as a Tokio blocking thread after ten idle seconds.
-pub(crate) struct Bubble {
+pub struct Bubble {
     /// bwrap, which runs the holder.
     holder: Child,
     entry: Entry,
@@ -44,14 +45,29 @@ pub(crate) struct Bubble {
     namespace: u64,
 }
 
-/// How a command enters a running environment. A thread that keeps a copy, such as a
-/// [`Forward`](crate::forward::Forward)'s, stops using it before the environment ends: once the
+/// The network a bubble's processes reach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Network {
+    /// A network namespace of its own, with a loopback alone: the bubble reaches no port of the
+    /// host, and no abstract socket, such as the user's X display's (`@/tmp/.X11-unix/X0`),
+    /// which an X server in the bubble would otherwise clash with. The app sandbox's, whose host
+    /// reaches a port through [`AppSandbox::forward`](crate::AppSandbox::forward).
+    Loopback,
+    /// The host's: a port a process of the bubble listens on answers on the host's loopback,
+    /// and the bubble reaches every port and abstract socket the host does, the user's X
+    /// display's included.
+    Host,
+}
+
+/// How a command enters a running bubble. A thread that keeps a copy, such as a
+/// [`Forward`](crate::forward::Forward)'s, stops using it before the bubble ends: once the
 /// first process's PID is free, another process may take it.
 #[derive(Clone)]
 pub(crate) struct Entry {
     /// nsenter, found on this process's `PATH`: a command's own `PATH`, the sandbox's, would
     /// look in the host's `/tmp/bin` first.
     nsenter: PathBuf,
+    network: Network,
     /// The host PID of the namespace's first process: `/proc/<init>/root` shows the tmpfs from
     /// outside, and nsenter enters the namespaces through it.
     init: u32,
@@ -67,10 +83,11 @@ struct Info {
 }
 
 impl Bubble {
-    /// Start an environment that shows each directory of `masked` empty, and return once its
-    /// tmpfs is mounted. A directory of `masked` that does not exist stays absent: bwrap would
-    /// create it on the host, which `/` shares.
-    pub(crate) fn start(masked: &[PathBuf]) -> Result<Self> {
+    /// Start a bubble that shows each directory of `masked` empty, on `network`, and return
+    /// once its tmpfs is mounted. A directory of `masked` that does not exist stays absent:
+    /// bwrap would create it on the host, which `/` shares. bwrap and nsenter run from this
+    /// process's `PATH`, such as the dev shell's.
+    pub fn start(masked: &[PathBuf], network: Network) -> Result<Self> {
         let nsenter = on_path("nsenter").context("no nsenter on PATH: run in the dev shell")?;
         let masks = masked
             .iter()
@@ -83,7 +100,8 @@ impl Bubble {
         let mut holder = Command::new("bwrap")
             .args(["--dev-bind", "/", "/", "--tmpfs", INSIDE])
             .args(masks)
-            .args(["--unshare-pid", "--as-pid-1", "--unshare-net"])
+            .args(["--unshare-pid", "--as-pid-1"])
+            .args((network == Network::Loopback).then_some("--unshare-net"))
             .args(["--proc", "/proc", "--info-fd", "2", "--"])
             .args(["sh", "-c", "echo ready; exec cat >/dev/null"])
             .stdin(Stdio::piped())
@@ -100,6 +118,7 @@ impl Bubble {
                 holder,
                 entry: Entry {
                     nsenter,
+                    network,
                     init: info.child_pid,
                 },
                 namespace: info.pid_namespace,
@@ -112,19 +131,22 @@ impl Bubble {
         }
     }
 
-    /// The sandbox's directory, as its processes see it.
-    pub(crate) fn inside() -> &'static Path {
+    /// The bubble's tmpfs, `/tmp`, as its processes see it.
+    pub fn inside() -> &'static Path {
         Path::new(INSIDE)
     }
 
-    /// The path that shows `inside`, a path inside the environment, from outside.
-    pub(crate) fn outside(&self, inside: &Path) -> PathBuf {
+    /// The path that shows `inside`, a path inside the bubble, from outside: under
+    /// `/proc/<PID>/root`, valid while the bubble runs.
+    pub fn outside(&self, inside: &Path) -> PathBuf {
         let relative = inside.strip_prefix("/").unwrap_or(inside);
         PathBuf::from(format!("/proc/{}/root", self.entry.init)).join(relative)
     }
 
-    /// A command that runs `program` inside the environment ([`Entry::command`]).
-    pub(crate) fn command(
+    /// A command that runs `program` inside the bubble, in `directory` (a path inside), with
+    /// `environment` alone: nsenter forks the program into the bubble's namespaces, and waits
+    /// for it.
+    pub fn command(
         &self,
         program: &Path,
         directory: &Path,
@@ -133,7 +155,7 @@ impl Bubble {
         self.entry.command(program, directory, environment)
     }
 
-    /// How a command enters the environment.
+    /// How a command enters the bubble.
     pub(crate) fn entry(&self) -> &Entry {
         &self.entry
     }
@@ -143,8 +165,37 @@ impl Bubble {
         &self.entry.nsenter
     }
 
-    /// The processes in the environment's PID namespace, its first one included, by host PID.
-    pub(crate) fn processes(&self) -> Vec<u32> {
+    /// The command line that runs `program` inside the bubble as [`command`](Self::command)
+    /// does, with `environment` in its arguments, whatever environment runs it: nsenter's path
+    /// first, for a terminal to launch, such as a pane of a Herdr client.
+    pub fn launch(
+        &self,
+        program: &Path,
+        directory: &Path,
+        environment: &[(OsString, OsString)],
+    ) -> Vec<OsString> {
+        let variables = environment.iter().map(|(name, value)| {
+            let mut variable = name.clone();
+            variable.push("=");
+            variable.push(value);
+            variable
+        });
+        let mut line = vec![self.entry.nsenter.clone().into_os_string()];
+        line.extend(self.entry.arguments());
+        line.extend(["-i".into(), chdir(directory)]);
+        line.extend(variables);
+        line.push(program.into());
+        line
+    }
+
+    /// The host PID of the bubble's first process: unique while the bubble runs.
+    pub fn id(&self) -> u32 {
+        self.entry.init
+    }
+
+    /// The processes in the bubble's PID namespace, its first one included, by host PID: none
+    /// once it ended.
+    pub fn processes(&self) -> Vec<u32> {
         let name = format!("pid:[{}]", self.namespace);
         crate::process::all()
             .into_iter()
@@ -155,9 +206,9 @@ impl Bubble {
             .collect()
     }
 
-    /// End the environment, and return once bwrap ended: the kernel killed every process in it
-    /// and freed its tmpfs.
-    pub(crate) fn end(&mut self) -> Result<()> {
+    /// End the bubble, and return once bwrap ended: the kernel killed every process in it and
+    /// freed its tmpfs. Ending it again does nothing.
+    pub fn end(&mut self) -> Result<()> {
         drop(self.holder.stdin.take());
         self.holder.wait().wrap_err("cannot wait for bwrap")?;
         Ok(())
@@ -165,10 +216,10 @@ impl Bubble {
 }
 
 impl Entry {
-    /// A command that runs `program` inside the environment, in `directory` (a path inside),
-    /// with `environment` alone. nsenter forks the program into the namespaces, and waits for
-    /// it. nsenter's own `--wd` opens its directory before it enters the mount namespace,
-    /// outside: `env` changes directory once inside.
+    /// [`Bubble::command`]. nsenter's own `--wd` opens its directory before it enters the mount
+    /// namespace, outside: `env` changes directory once inside. A bubble on the host's network
+    /// is entered without `--net`: the host's network namespace belongs to no namespace of the
+    /// bubble's, so entering it would be refused.
     pub(crate) fn command(
         &self,
         program: &Path,
@@ -177,21 +228,28 @@ impl Entry {
     ) -> Command {
         let mut command = Command::new(&self.nsenter);
         command
-            .args([
-                "--preserve-credentials",
-                "--user",
-                "--mount",
-                "--pid",
-                "--net",
-                &format!("--target={}", self.init),
-                "--",
-                "env",
-            ])
-            .arg(format!("--chdir={}", directory.display()))
+            .args(self.arguments())
+            .arg(chdir(directory))
             .arg(program)
             .env_clear()
             .envs(environment.iter().cloned());
         command
+    }
+
+    /// nsenter's arguments that enter the bubble and run `env`, up to `env`'s own.
+    fn arguments(&self) -> Vec<OsString> {
+        let mut arguments: Vec<OsString> = ["--preserve-credentials", "--user", "--mount", "--pid"]
+            .map(OsString::from)
+            .into();
+        if self.network == Network::Loopback {
+            arguments.push("--net".into());
+        }
+        arguments.extend([
+            format!("--target={}", self.init).into(),
+            "--".into(),
+            "env".into(),
+        ]);
+        arguments
     }
 }
 
@@ -199,6 +257,13 @@ impl Drop for Bubble {
     fn drop(&mut self) {
         let _ = self.end();
     }
+}
+
+/// `env`'s option that runs its program in `directory`.
+fn chdir(directory: &Path) -> OsString {
+    let mut option = OsString::from("--chdir=");
+    option.push(directory);
+    option
 }
 
 /// The program `name` as this process's `PATH` finds it.
@@ -213,7 +278,3 @@ pub(crate) fn on_path(name: &str) -> Option<PathBuf> {
                     .is_ok_and(|file| file.is_file() && file.permissions().mode() & 0o111 != 0)
         })
 }
-
-#[cfg(test)]
-#[path = "bubble.tests.rs"]
-mod tests;

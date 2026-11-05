@@ -46,6 +46,14 @@ shows on the user's display nor takes their focus. In bubblewrap by default, or 
 bubblewrap cannot run.
 _Avoid_: private app, test app
 
+**Bubble**:
+The bubblewrap environment an app sandbox runs in by default (`app_sandbox::Bubble`): PID and
+mount namespaces of its own, a tmpfs on `/tmp`, the directories its caller masks shown empty,
+such as the user's (`user_directories`), and the host's network or a loopback alone. A caller
+may run one alone, with no herdr-app, such as herdr-bowtie for a Herdr server. Everything in
+it ends with it.
+_Avoid_: container
+
 **Forward**:
 A TCP port of the app sandbox's loopback that the host reaches at the same `127.0.0.1:<port>`
 (`AppSandbox::forward`), such as a server's that an app runs in the sandbox and its test calls.

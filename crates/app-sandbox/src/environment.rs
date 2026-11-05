@@ -125,17 +125,16 @@ fn names_a_display(name: &OsStr) -> bool {
     )
 }
 
-/// The user's directories the bubblewrap environment masks, from `inherited`, this process's
-/// environment: those of the user's herdr-app and herdr-core (`hc`), the app's home, the core's
-/// configuration and its state; Herdr 0.9's configuration directory and the one that holds its
-/// socket; and the runtime directory (`XDG_RUNTIME_DIR`), which holds the core's sockets and the
-/// desktop's: the Wayland display, the session bus, the window manager's IPC, which moves the
-/// user's focus. A directory that holds `HOME` is left out, since masking it would hide the
-/// user's files from the sandbox's programs, and so is one inside another: masking the outer
-/// one hides it.
-pub(crate) fn user_directories(
-    inherited: impl IntoIterator<Item = (OsString, OsString)>,
-) -> Vec<PathBuf> {
+/// The user's directories a [`Bubble`](crate::Bubble) masks, from `inherited`, this process's
+/// environment, such as `std::env::vars_os()`: those of the user's herdr-app and herdr-core
+/// (`hc`), the app's home, the core's configuration and its state; Herdr 0.9's configuration
+/// directory and the one that holds its socket; and the runtime directory (`XDG_RUNTIME_DIR`),
+/// which holds the core's sockets and the desktop's: the Wayland display, the session bus, the
+/// window manager's IPC, which moves the user's focus. A directory that holds `HOME` is left
+/// out, since masking it would hide the user's files from the sandbox's programs, and so is one
+/// inside another: masking the outer one hides it. Inside, a program finds none of the user's
+/// Herdr, herdr-app or hc sockets.
+pub fn user_directories(inherited: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<PathBuf> {
     let inherited: BTreeMap<OsString, OsString> = inherited.into_iter().collect();
     let variable = |name: &str| {
         inherited

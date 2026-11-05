@@ -14,8 +14,14 @@ Three layers, in three files; a change to one leans on the others:
   (`environment.rs`). A caller's variables override the sandbox's defaults, such as
   `BROWSER=true`, never what the isolation stands on.
 - In bubblewrap, the user's runtime directory and Herdr directories show empty, so a path typed
-  in a sandbox terminal reaches none of their sockets (`bubble.rs`). Plain isolation has no such
-  layer.
+  in a sandbox terminal reaches none of their sockets (`bubble.rs`, `user_directories`). Plain
+  isolation has no such layer.
+
+A `Bubble` run alone (herdr-bowtie's Herdr server) has the third layer only when its caller
+masks `user_directories`, and the second only when the environment it gives `command` or
+`launch` leaves out the user's displays and Herdr variables: it passes it on as it is. On
+`Network::Host` it also reaches the user's X display's abstract socket and every host port, so
+only the second layer keeps a program off their display.
 
 ## Reaching it from the host
 

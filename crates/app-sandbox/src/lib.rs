@@ -7,6 +7,10 @@
 //! [`Isolation`] says how far it goes: in bubblewrap by default, where the user's directories
 //! and runtime directory show empty and the kernel cleans up after it, or plain, where
 //! bubblewrap cannot run.
+//!
+//! A [`Bubble`] is that bubblewrap environment alone, with no display nor herdr-app, for a
+//! caller that runs programs of its own in it, such as a Herdr server, with the
+//! [`user_directories`] masked.
 
 mod bubble;
 mod environment;
@@ -26,7 +30,8 @@ use std::time::{Duration, Instant};
 use eyre::{Context, ContextCompat, Result, ensure};
 use serde_json::Value;
 
-use bubble::Bubble;
+pub use bubble::{Bubble, Network};
+pub use environment::user_directories;
 use environment::{Inputs, WAYLAND_SOCKET};
 use forward::Forward;
 use plain::Plain;
@@ -185,9 +190,10 @@ impl AppSandbox {
             );
         }
         let jail = match options.isolation {
-            Isolation::Bubblewrap => Jail::Bubble(Bubble::start(&environment::user_directories(
-                std::env::vars_os(),
-            ))?),
+            Isolation::Bubblewrap => Jail::Bubble(Bubble::start(
+                &user_directories(std::env::vars_os()),
+                Network::Loopback,
+            )?),
             Isolation::Plain => Jail::Plain(Plain::start()?),
         };
         let mut sandbox = Self {
