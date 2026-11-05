@@ -21,6 +21,11 @@ so an app takes these crates as dev-dependencies, or from a test workspace of it
 what it builds and installs. Code an app itself links lives in a small crate of its own, which
 the app takes as a `git` dependency.
 
+## Crates
+
+- `app-sandbox`: a private herdr-app on a headless Weston display, in bubblewrap, for tests
+  that drive and screenshot the app without touching your display or focus.
+
 ## The pinned Herdr tools
 
 `flake.nix` pins Herdr 0.9.5, herdr-app 0.1.13 and hc 0.1.18 (herdr-app and hc on Linux only).

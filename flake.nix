@@ -203,8 +203,11 @@
                 pkgs.typos
                 rustComplexityAnalyzer
               ]
-              # The vision sandbox runs bubblewrap.
-              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.bubblewrap ];
+              # The app sandbox (crates/app-sandbox) runs bubblewrap, and enters it with nsenter.
+              ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.bubblewrap
+                pkgs.util-linux
+              ];
               # Not on PATH: `herdr` there stays the user's own Herdr.
               TEST_HERDR_BIN_PATH = "${herdrFor system}/bin/herdr";
             }

@@ -121,6 +121,9 @@ A test that needs Herdr or herdr-app runs the pinned release named in the dev sh
 restart or modify the user's Herdr, herdr-app or their panes during tests. Stop only the
 processes you started, by their PID: other agents and the user's sessions run on this machine.
 
+A test that needs herdr-app runs it in `crates/app-sandbox`; read
+[The app sandbox](.agents/wiki/app-sandbox.md) before you change or test that sandbox.
+
 # Skill settings
 
 ## Agent skills

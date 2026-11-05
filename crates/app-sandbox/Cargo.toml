@@ -1,0 +1,21 @@
+[package]
+name = "app-sandbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "A private herdr-app on a headless Weston display, which nothing outside it sees and which never reaches the user's display."
+
+[dependencies]
+eyre = "0.6"
+rustix = { version = "1", features = ["process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+
+[dev-dependencies]
+png = "0.18"
+
+[lints]
+workspace = true
