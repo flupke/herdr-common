@@ -18,8 +18,8 @@ Keep this file under 100 lines. When a topic outgrows it, move the topic to a pa
 - herdr-common is open source: what it runs assumes none of the maintainer's own tools or paths
   (a dotfiles manager, a login shell, a checkout location). It does assume Nix: the tools it
   runs come from the dev shell.
-- A crate here is test tooling: no app links it into what it builds and installs (AGENTS.md,
-  How the apps use it).
+- A crate here is test tooling, which no app links into what it builds and installs (AGENTS.md,
+  How the apps use it), save `vision-signal` (ADR 0003).
 - A crate serves every app that needs it: what is particular to one app stays in that app,
   behind a parameter or a trait the crate takes.
 - A test reaches Herdr, herdr-app and hc only through the pinned releases the dev shell names

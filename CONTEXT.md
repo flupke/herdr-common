@@ -11,8 +11,9 @@ checked out beside herdr-common.
 _Avoid_: client, consumer, project
 
 **Test tooling**:
-What an app's tests and its agents' visual testing run, and never the app itself: what
-herdr-common holds. An app takes it as a dev-dependency or from a test workspace of its own.
+What an app's tests and its agents' visual testing run, and never the app itself: all of
+herdr-common but `vision-signal`, which apps link (ADR 0003). An app takes it as a
+dev-dependency or from a test workspace of its own.
 _Avoid_: shared code, common library
 
 **Pinned tool**:
@@ -48,3 +49,20 @@ The process that `app-sandbox start` leaves running, which holds an app sandbox 
 commands that follow on a socket named after the sandbox, until `stop`: an agent drives the
 sandbox with one shell command after another.
 _Avoid_: daemon, server
+
+**Vision core**:
+The vision MCP tools every app's visual testing shares (`crates/vision-mcp`): `screen`,
+`screenshot`, `key`, `type`, `click`, `drag` and `wait_for`, on a vision session over an app
+sandbox. An app's own MCP server routes them beside its app-specific tools.
+_Avoid_: vision server (each app has its own), driver
+
+**Frame marker**:
+The terminal title an app that speaks vision-signal writes after each frame it paints: the
+frame's number, the latest acknowledgement it read, and its size. herdr-core reports it as a
+`title` event, after the frame's bytes.
+
+**Acknowledgement**:
+How an app that speaks vision-signal confirms it read an input: after the input, the vision
+core pastes an acknowledgement request, and the first frame marker that names it shows the
+app's reaction to the input.
+_Avoid_: settle (the wait on pixels for an app that speaks no vision-signal)

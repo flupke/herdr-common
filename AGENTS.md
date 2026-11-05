@@ -9,11 +9,12 @@ all of them ([The pinned Herdr tools](.agents/wiki/herdr-tools.md)).
 ## How the apps use it
 
 An app takes a crate through a cargo `path` dependency, `../herdr-common/crates/<name>`: no
-publishing, no git revision pins. So the crates here are test tooling only: an app takes them as
+publishing, no git revision pins. So the crates here are test tooling: an app takes them as
 `[dev-dependencies]` or from a test workspace of its own (as the reviewer's `tests/tui`), never
-in what it builds and installs. Code an app itself links, such as the reviewer's vision-signal
-frame emitter, stays out of herdr-common, in a tiny crate the app takes as a `git` dependency.
-ADR 0001 says why.
+in what it builds and installs. ADR 0001 says why. The one exception is `crates/vision-signal`,
+the frame signal an app links: it has no dependency, and apps take it as a `git` dependency (ADR
+0003). Any other code an app links stays out of herdr-common, in a tiny crate of its own the app
+takes by git.
 
 # Standards
 

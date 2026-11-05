@@ -1,0 +1,15 @@
+[package]
+name = "vision-display"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "The app sandbox's X display, driven as its user would: keys, text, pastes, clicks and drags through XTEST, and a hash of the window's pixels."
+
+[dependencies]
+eyre = "0.6"
+x11rb = { version = "0.13", features = ["xtest"] }
+
+[lints]
+workspace = true

@@ -16,10 +16,15 @@ dependencies:
 No crate is published, and none is pinned by git revision: the app builds against the
 herdr-common next to it.
 
-herdr-common is test tooling only. Someone who clones an app alone has no `../herdr-common`,
+herdr-common is test tooling, but for one crate. Someone who clones an app alone has no `../herdr-common`,
 so an app takes these crates as dev-dependencies, or from a test workspace of its own, never in
-what it builds and installs. Code an app itself links lives in a small crate of its own, which
-the app takes as a `git` dependency.
+what it builds and installs. The one crate an app links, `vision-signal`, has no dependency, and
+the app takes it from git:
+
+```toml
+[dependencies]
+vision-signal = { git = "https://github.com/flupke/herdr-common" }
+```
 
 ## Crates
 
@@ -27,6 +32,14 @@ the app takes as a `git` dependency.
   that drive and screenshot the app without touching your display or focus.
 - `app-sandbox-cli`: the `app-sandbox` command, which keeps an app sandbox running across
   shell commands, for agents.
+- `vision-mcp`: the vision MCP core, an agent's eyes and hands on an app in the app sandbox:
+  `screen`, `screenshot`, `key`, `type`, `click`, `drag` and `wait_for`, which an app's own MCP
+  server routes beside its own tools.
+- `vision-display`: the sandbox's X display driven as its user would, through XTEST and the
+  clipboard: the core's hands.
+- `vision-signal`: the frame markers and acknowledgements an app writes to its terminal, so the
+  core returns once the app painted its reaction to an input.
+- `fake-agent`: a fake Claude Code or Codex in a pane, which a test drives.
 
 ## The herdr-mod-vision skill
 

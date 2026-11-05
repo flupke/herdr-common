@@ -24,6 +24,13 @@ apps' tests rely on: read how each app's tests drive the original, and give the 
 test of each behaviour they need, in its new shape. The originals' own tests come along as far
 as they still hold.
 
+## Tools that drive an app
+
+A tool an agent drives an app with, such as the vision core's, is tested as the agent uses it:
+the test runs a small app in the app sandbox, calls the tools through an MCP client, and asserts
+on what they return (the screen, the screenshot, the reaction, `wait_for`'s outcome). Give the
+small app the behaviour that makes a wrong tool fail, such as a reaction painted late.
+
 ## Tests that can go red
 
 - The expected value is written by hand from the behaviour the code owes, or comes from an

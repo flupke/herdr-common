@@ -365,6 +365,11 @@ impl AppSandbox {
         }
     }
 
+    /// The programs the sandbox runs.
+    pub fn programs(&self) -> &Programs {
+        &self.programs
+    }
+
     /// The environment of the sandbox's processes: its `DISPLAY`, `HERDR_APP_HOME`,
     /// `HC_SESSION` and XDG directories among them.
     pub fn environment(&self) -> &[(OsString, OsString)] {
