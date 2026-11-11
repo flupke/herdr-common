@@ -68,7 +68,7 @@ ln -sfn "$PWD/skills/herdr-mod-vision" ~/.claude/skills/herdr-mod-vision
 
 ## The pinned Herdr tools
 
-`flake.nix` pins Herdr 0.9.5, herdr-app 0.1.13 and hc 0.1.18 (herdr-app and hc on Linux only).
+`flake.nix` pins Herdr 0.9.5, herdr-app 0.1.13 and hc 0.1.20 (herdr-app and hc on Linux only).
 `nix develop` names them in `TEST_HERDR_BIN_PATH`, `TEST_HERDR_APP_BIN_PATH` and
 `TEST_HC_BIN_PATH`, and leaves them off `PATH`, so `herdr`, `herdr-app` and `hc` there stay
 your own. The flake's `packages` (`herdr`, `herdr-app`, `hc`) give the same releases to another

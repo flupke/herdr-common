@@ -17,6 +17,9 @@ are Linux only, since the sandbox that runs them is bubblewrap. The flake gives 
 - `checks.<system>.pinned-versions`, which `nix flake check` builds: it runs each tool's
   `--version` and fails unless it prints the pinned version.
 
+Keep hc at 0.1.20 or later: it cancels a `terminal.send` its caller gave up on, where 0.1.19
+and earlier type it late, so a resend can double a prompt.
+
 herdr-app takes hc from its manifest's `core_min` on (0.1.11 for herdr-app 0.1.13). `gh
 release list --repo herdrdev/herdr` shows Herdr's latest release.
 
