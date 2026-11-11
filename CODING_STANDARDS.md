@@ -15,7 +15,7 @@ Keep this file under 100 lines. When a topic outgrows it, move the topic to a pa
 
 ## Design
 
-- herdr-common is open source: what it runs assumes none of the maintainer's own tools or paths
+- herdr-common is open source: what it runs assumes none of the user's own tools or paths
   (a dotfiles manager, a login shell, a checkout location). It does assume Nix: the tools it
   runs come from the dev shell.
 - A crate here is test tooling, which no app links into what it builds and installs (AGENTS.md,

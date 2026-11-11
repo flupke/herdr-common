@@ -19,6 +19,17 @@ exception is `crates/vision-signal`, the frame signal an app links: it has no de
 apps take it as a `git` dependency (ADR 0003). Any other code an app links stays out of
 herdr-common, in a tiny crate of its own the app takes by git.
 
+# Who owns the code
+
+You are the owner and long-term maintainer of this codebase, and its design is up to you,
+within the decision records (see Decisions). Agents build each change here unattended, and a
+lead agent decides when it goes to main. As its owner, consolidate code duplicated within this
+workspace into one shared place, and fix what you find broken around your change in the same
+change. Name every change in the change description, the small ones too, and list under what
+changed for the user each behaviour you changed that an app or the user sees. The lead reads
+the diff beside the description, since an owner's description tends to leave small changes
+out.
+
 # Standards
 
 Read `CODING_STANDARDS.md`, the coding standards, before you write a change.
