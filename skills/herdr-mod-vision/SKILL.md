@@ -1,6 +1,6 @@
 ---
 name: herdr-mod-vision
-description: "Visual testing for Herdr (herdr-app) mods, in a private app: commands, state, screenshots, recordings. Use when working on a herdr-app mod, or asked to show or record one working."
+description: "Visual testing for Herdr (herdr-app) mods, in a private herdr-app: commands, state, screenshots, recordings. Use when working on a herdr-app mod, or asked to show or record one working."
 ---
 
 Give yourself **eyes** and **hands** on the mod you built, in an **app sandbox**: a private

@@ -40,8 +40,8 @@ port of its loopback through `AppSandbox::forward` (`forward.rs`).
 
 ## Gotchas
 
-- bwrap reports the holder's PID (`--info-fd`) before it mounts the tmpfs: a path through
-  `/proc/<PID>/root` read before the holder's `ready` line still reaches the host's `/tmp`.
+- bwrap reports the PID of the bubble's init (`--info-fd`) before it mounts the tmpfs: a path
+  through `/proc/<PID>/root` read before the init's `ready` line still reaches the host's `/tmp`.
 - `Command` looks a bare program name up in the *child's* `PATH`: the sandbox's starts with
   its `bin` (`/tmp/bin` in bubblewrap, the host's `/tmp/bin` before nsenter enters), so the
   sandbox resolves `nsenter` with this process's `PATH` first.
@@ -79,8 +79,8 @@ do then, which the code leans on:
 - A process stopped with `SIGSTOP` under nsenter stops nsenter too, which reaps it only once
   continued: `kill_trees` continues each stopped nsenter whose child it killed, until it
   reaped the child, and signals nothing else outside the trees.
-- In bubblewrap the killed processes stay zombies of the holder (`cat`, which reaps nothing)
-  until the sandbox stops: `processes()` lists them, with no `exe`.
+- In bubblewrap the killed processes stay zombies of the bubble's init (`cat`, which reaps
+  nothing) until the sandbox stops: `processes()` lists them, with no `exe`.
 
 ## Testing a change
 

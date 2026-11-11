@@ -1,7 +1,7 @@
 //! A fake agent for the apps' tests: a program that plays Claude Code, or Codex, in a pane of a
-//! private Herdr or herdr-app, at the level the apps and Herdr see. It reads the prompts typed in
-//! its pane, shows its state as Claude Code does (its title, its screen, OSC 7501 on herdr-app),
-//! runs the app's Claude Code hooks with Claude Code's payloads, keeps Claude Code's transcript,
+//! private Herdr, at the level the apps and Herdr see. It reads the prompts typed in its pane,
+//! shows its state as Claude Code does (its title, its screen, OSC 7501 on herdr-app), runs the
+//! app's Claude Code hooks with Claude Code's payloads, keeps Claude Code's transcript,
 //! and reports its session to Herdr as Claude's Herdr integration does. It tells the test what it
 //! does on an event socket, and takes the test's commands there ([`Events`]).
 //!

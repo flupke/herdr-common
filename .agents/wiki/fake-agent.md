@@ -1,9 +1,9 @@
 # The fake agent
 
-What Herdr and herdr-app read of `crates/fake-agent`, and how to watch it in a private Herdr or
-herdr-app. The crate's docs (`src/lib.rs`, `variables`, `Command`, `Event`) say what it does and
-how an app runs it, `tests/agent.rs` how its tests stand for Herdr and herdr-app; ADR 0002 says
-why an app runs it from a program of its own.
+What Herdr and herdr-app read of `crates/fake-agent`, and how to watch it in a private Herdr
+server or herdr-app. The crate's docs (`src/lib.rs`, `variables`, `Command`, `Event`) say what it
+does and how an app runs it, `tests/agent.rs` how its tests stand for Herdr and herdr-app; ADR
+0002 says why an app runs it from a program of its own.
 
 The checks run neither Herdr nor herdr-app: a change to what either reads of the agent also
 needs a run in a private one (below).
@@ -50,7 +50,7 @@ $S hc <name> get agent --json   # its status
 
 Once done, `$S stop <name>`, then stop the listener and its `tail` by their PIDs.
 
-## Watching it in a private Herdr
+## Watching it in a private Herdr server
 
 To see a change to what the agent shows, run it in a private server of the pinned Herdr, in the
 dev shell, with a socket path short enough for a Unix socket (under `target/`, not the

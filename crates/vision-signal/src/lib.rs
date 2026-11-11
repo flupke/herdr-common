@@ -3,9 +3,9 @@
 //! screen it follows.
 //!
 //! - Each painted frame ends with a terminal title, the [`FrameMarker`], that numbers it.
-//!   herdr-core reports a changed title as an event, so the core waits on an event instead of
-//!   a delay, and the screen it reads then holds that frame at least.
-//! - The core pastes an [`acknowledgement_request`] after its own input. The app reads the
+//!   herdr-core reports a changed title as an event, so the vision core waits on an event
+//!   instead of a delay, and the screen it reads then holds that frame at least.
+//! - The vision core pastes an [`acknowledgement_request`] after its own input. The app reads the
 //!   input first, then the request, and names the request in the next frame's marker, which it
 //!   paints even when nothing else changed: that frame shows the app's reaction to the input.
 //!
@@ -13,7 +13,7 @@
 //!
 //! - It turns on bracketed paste (`\x1b[?2004h`): the request comes as a paste, which the app
 //!   takes out of its input with [`parse_acknowledgement_request`] before any widget sees it.
-//! - It writes [`FrameMarker::RESET`] as it quits, so the core stops waiting on its frames
+//! - It writes [`FrameMarker::RESET`] as it quits, so the vision core stops waiting on its frames
 //!   in a terminal whose shell paints none.
 //!
 //! This is the one crate of herdr-common that an app links into what it builds, so it has no
@@ -75,7 +75,7 @@ impl FrameMarker {
     }
 }
 
-/// The text the core pastes to ask for acknowledgement `id`.
+/// The text the vision core pastes to ask for acknowledgement `id`.
 pub fn acknowledgement_request(id: u64) -> String {
     format!("{REQUEST_PREFIX}{id}")
 }

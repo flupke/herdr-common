@@ -43,7 +43,7 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
         ("TERM", "screen"),
     ]);
     let added = variables(&[
-        ("PATH", "/sandbox/stand-ins:/usr/bin"),
+        ("PATH", "/sandbox/doubles:/usr/bin"),
         ("LANG", "fr_FR.UTF-8"),
         ("DISPLAY", ":1"),
         ("WAYLAND_DISPLAY", "/run/user/1000/wayland-1"),
@@ -79,7 +79,7 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
             ("HERDR_TELEMETRY", "0"),
             ("HOME", "/sandbox/home"),
             ("LANG", "fr_FR.UTF-8"),
-            ("PATH", "/sandbox/bin:/sandbox/stand-ins:/usr/bin"),
+            ("PATH", "/sandbox/bin:/sandbox/doubles:/usr/bin"),
             ("PS1", "$ "),
             ("SHELL", "/bin/sh"),
             ("TERM", "xterm-256color"),

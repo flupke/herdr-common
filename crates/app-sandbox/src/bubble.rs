@@ -25,21 +25,21 @@ const INSIDE: &str = "/tmp";
 /// as the [`user_directories`](crate::user_directories): each shows empty inside, under a tmpfs
 /// of its own, while the host's copy stays as it was.
 ///
-/// It ends once it lets go of its holder's standard input: on [`end`](Self::end), on a drop, and
+/// It ends once it lets go of its init's standard input: on [`end`](Self::end), on a drop, and
 /// when the process that holds it dies, since the kernel then closes the pipe.
 ///
 /// The tmpfs is mounted on `/tmp` rather than on a new empty directory: such a directory would
-/// outlive a `SIGKILL` of the holder, which then cannot remove it.
+/// outlive a `SIGKILL` of the process that holds the bubble, which then cannot remove it.
 ///
-/// The holder, `cat` on the pipe, runs as the namespace's first process (`--as-pid-1`): once it
+/// Its init, `cat` on the pipe, runs as the namespace's first process (`--as-pid-1`): once it
 /// ends, the kernel kills the rest of the namespace. bwrap's own first process would instead
 /// wait for every process of the namespace, a detached one included.
 ///
 /// bwrap's `--die-with-parent` is left out: it sets `PR_SET_PDEATHSIG`, which fires when the
 /// *thread* that spawned bwrap ends, such as a Tokio blocking thread after ten idle seconds.
 pub struct Bubble {
-    /// bwrap, which runs the holder.
-    holder: Child,
+    /// bwrap, which runs the init.
+    bwrap: Child,
     entry: Entry,
     /// The inode of the PID namespace, as `/proc/<pid>/ns/pid` names it.
     namespace: u64,
@@ -95,9 +95,9 @@ impl Bubble {
             .flat_map(|directory| [OsString::from("--tmpfs"), directory.into()]);
         // bwrap writes its report on standard error, with its errors, as soon as it created the
         // namespaces, then closes it: before it mounted the tmpfs, so a path through
-        // `/proc/<init>/root` still reaches the host's `/tmp`. The holder says `ready` on
+        // `/proc/<init>/root` still reaches the host's `/tmp`. The init says `ready` on
         // standard output once it runs, past every mount.
-        let mut holder = Command::new("bwrap")
+        let mut bwrap = Command::new("bwrap")
             .args(["--dev-bind", "/", "/", "--tmpfs", INSIDE])
             .args(masks)
             .args(["--unshare-pid", "--as-pid-1"])
@@ -109,13 +109,13 @@ impl Bubble {
             .stderr(Stdio::piped())
             .spawn()
             .wrap_err("cannot run bwrap (bubblewrap): run in the dev shell")?;
-        let report = holder.stderr.take().context("bwrap's errors are piped")?;
+        let report = bwrap.stderr.take().context("bwrap's errors are piped")?;
         let report = std::io::read_to_string(report)?;
-        let ready = holder.stdout.take().context("bwrap's output is piped")?;
+        let ready = bwrap.stdout.take().context("bwrap's output is piped")?;
         let ready = BufReader::new(ready).lines().next().transpose()?;
         match serde_json::from_str::<Info>(&report) {
             Ok(info) if ready.as_deref() == Some("ready") => Ok(Self {
-                holder,
+                bwrap,
                 entry: Entry {
                     nsenter,
                     network,
@@ -124,8 +124,8 @@ impl Bubble {
                 namespace: info.pid_namespace,
             }),
             _ => {
-                drop(holder.stdin.take());
-                let status = holder.wait()?;
+                drop(bwrap.stdin.take());
+                let status = bwrap.wait()?;
                 eyre::bail!("bwrap did not start ({status}): {}", report.trim());
             }
         }
@@ -209,8 +209,8 @@ impl Bubble {
     /// End the bubble, and return once bwrap ended: the kernel killed every process in it and
     /// freed its tmpfs. Ending it again does nothing.
     pub fn end(&mut self) -> Result<()> {
-        drop(self.holder.stdin.take());
-        self.holder.wait().wrap_err("cannot wait for bwrap")?;
+        drop(self.bwrap.stdin.take());
+        self.bwrap.wait().wrap_err("cannot wait for bwrap")?;
         Ok(())
     }
 }

@@ -11,8 +11,8 @@ all of them ([The pinned Herdr tools](.agents/wiki/herdr-tools.md)).
 No crate here is published. An app takes a crate as a `git` dependency on this repository, its
 `Cargo.lock` pinning the revision, or by `path` (herdr-common checked out beside the app) only
 from a test workspace of its own, as herdr-ruminate's `tests/tui`: cargo reads every path
-dependency of a workspace, dev-dependencies included. The private herdr-bowtie, always beside
-herdr-common, may take plain path dependencies (ADR 0004).
+dependency of a workspace, dev-dependencies included. herdr-bowtie, a private repository always
+beside herdr-common, may take plain path dependencies (ADR 0004).
 
 The crates here are test tooling, never in what an app builds and installs (ADR 0001). The one
 exception is `crates/vision-signal`, the frame signal an app links: it has no dependency, and

@@ -23,9 +23,9 @@ Or it takes them by `path`, but only from a test workspace of its own, with its 
 ```
 
 Not by `path` from the app's own workspace: cargo reads every path dependency of a workspace,
-dev-dependencies included, so someone who clones the app alone could not build it. A private
-app that always sits beside herdr-common, as herdr-bowtie, may still take plain `path`
-dependencies.
+dev-dependencies included, so someone who clones the app alone could not build it.
+herdr-bowtie, a private repository that always sits beside herdr-common, may still take plain
+`path` dependencies.
 
 herdr-common is test tooling, but for one crate: an app never takes these crates in what it
 builds and installs. The one crate an app links, `vision-signal`, has no dependency, and the app
@@ -47,12 +47,12 @@ vision-signal = { git = "https://github.com/flupke/herdr-common" }
   shell commands, for agents.
 - `vision-mcp`: the vision MCP core, an agent's eyes and hands on an app in the app sandbox:
   `screen`, `screenshot`, `key`, `type`, `click`, `drag`, `settle` and `wait_for`, which an
-  app's own MCP server routes beside its own tools. `settle` waits for the app to show a change an
+  app's vision server routes beside its own tools. `settle` waits for the app to show a change an
   app's own tools made, and screens name the rows that changed since the previous one. A session sees and drives the app again after each restart.
 - `vision-display`: the sandbox's X display driven as its user would, through XTEST and the
-  clipboard: the core's hands.
+  clipboard: the vision core's hands.
 - `vision-signal`: the frame markers and acknowledgements an app writes to its terminal, so the
-  core returns once the app painted its reaction to an input.
+  vision core returns once the app painted its reaction to an input.
 - `fake-agent`: a fake Claude Code or Codex in a pane, which a test drives.
 
 ## The herdr-mod-vision skill

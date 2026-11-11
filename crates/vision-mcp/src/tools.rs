@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::session::{Input, Reaction, Screen, Vision};
 
-/// What the tools are, for the instructions of an app's MCP server.
+/// What the tools are, for the instructions of an app's vision server.
 pub const INSTRUCTIONS: &str = "Eyes and hands on an app in a private herdr-app, on a headless \
 display that never reaches the user's: screen reads a terminal's text, screenshot the window's \
 pixels; key, type, click and drag act on the window as its user would, and return once the app \

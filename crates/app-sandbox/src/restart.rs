@@ -14,8 +14,8 @@ const RECONNECTED: &str = "reconnected to the core";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Restart {
     /// The core: `SIGKILL` to every hc process of the sandbox (the window's `hc connect`, the
-    /// core, its holders, and an `hc events` or any other hc command running) and every
-    /// program under them, as a crash of the core, or a reboot, ends them. The window stays,
+    /// core, herdr-core's holders, and an `hc events` or any other hc command running) and
+    /// every program under them, as a crash of the core, or a reboot, ends them. The window stays,
     /// and starts a new core, which gives each kept terminal a shell, at its address, in a few
     /// seconds.
     Core,

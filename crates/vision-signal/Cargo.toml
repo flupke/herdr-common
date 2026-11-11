@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "What an app under visual testing tells the vision core through its terminal: a marker after each painted frame, which acknowledges the core's input. The one crate here an app links: it has no dependency."
+description = "What an app under visual testing tells the vision core through its terminal: a frame marker after each painted frame, which acknowledges the vision core's input. The one crate here an app links: it has no dependency."
 
 [lints]
 workspace = true
