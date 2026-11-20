@@ -370,6 +370,72 @@ fn claude_code_s_own_commands_start_sessions_and_run_no_prompt_hook() {
     );
 }
 
+#[test]
+fn a_typed_compact_goes_on_in_its_session_and_runs_no_prompt() {
+    let mut agent = Started::new(
+        &["--session-id", SESSION],
+        &[("HC_TERMINAL_ID", Path::new("t1"))],
+    );
+    agent.wait_for("its start", |event| matches!(event, Event::Started { .. }));
+    let context = |text: &str| {
+        serde_json::json!({"hookSpecificOutput":
+            {"hookEventName": "SessionStart", "additionalContext": text}})
+    };
+
+    agent.answers("SessionStart", &context("Summary one."));
+    agent.types("/compact\r");
+    let mut compacting = agent.events.events_until("the first compaction", |reported| {
+        matches!(&reported.event, Event::SessionStarted { start, .. } if start == "compact")
+    });
+    agent.answers("SessionStart", &context("Summary two."));
+    agent.types("/compact Keep the plan.\r");
+    // The marker, typed after the second compaction, comes once it is done.
+    compacting.extend(agent.events.mark(|marker| agent_types(&agent, marker)));
+    agent.types("\u{4}");
+    agent.wait_for("its exit", |event| *event == Event::Exited);
+
+    assert!(agent.process.wait().unwrap().success());
+    assert!(
+        !compacting.iter().any(|reported| matches!(
+            reported.event,
+            Event::PromptReceived { .. } | Event::TurnStarted | Event::TurnEnded { .. }
+        )),
+        "{compacting:?}"
+    );
+    let hooks = agent.hooks();
+    assert_eq!(
+        summary(&hooks),
+        [
+            r#"SessionStart "startup""#,
+            r#"SessionStart "compact""#,
+            r#"SessionStart "compact""#,
+            r#"SessionEnd "prompt_input_exit""#,
+        ]
+    );
+    assert!(hooks.iter().all(|payload| payload["session_id"] == SESSION));
+    assert_eq!(
+        session_starts(&agent),
+        [
+            (SESSION, "startup"),
+            (SESSION, "compact"),
+            (SESSION, "compact")
+        ]
+        .map(|(session, start)| (session.to_owned(), start.to_owned()))
+    );
+    let screen = std::fs::read_to_string(agent.path("screen")).unwrap();
+    for shown in [
+        "session context: Summary one.",
+        "session context: Summary two.",
+        "compacted",
+    ] {
+        assert!(screen.contains(shown), "{shown:?} not on its screen");
+    }
+    assert!(
+        !states(&screen).contains(&"working"),
+        "a compaction is no turn"
+    );
+}
+
 /// Each session start `agent` reported, with how it started.
 fn session_starts(agent: &Started) -> Vec<(String, String)> {
     agent

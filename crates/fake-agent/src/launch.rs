@@ -16,6 +16,8 @@ pub(crate) enum Start {
     Resume,
     Clear,
     Fork,
+    /// Claude Code compacted the session, which goes on under the same ID.
+    Compact,
 }
 
 impl Start {
@@ -25,6 +27,7 @@ impl Start {
             Self::Resume => "resume",
             Self::Clear => "clear",
             Self::Fork => "fork",
+            Self::Compact => "compact",
         }
     }
 }

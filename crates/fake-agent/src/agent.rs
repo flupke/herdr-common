@@ -25,6 +25,9 @@ const CLEAR: &str = "/clear";
 /// The command, typed in its pane, that has Claude Code fork its session into its background
 /// daemon.
 const FORK: &str = "/bg";
+/// The command, typed in its pane alone or with instructions after a space, that has Claude
+/// Code compact its session.
+const COMPACT: &str = "/compact";
 /// The command, typed in its pane with a session's ID, that has Claude Code resume that
 /// session.
 const RESUME: &str = "/resume ";
@@ -301,6 +304,7 @@ impl<'a> Agent<'a> {
             EXIT => return self.exit(),
             CLEAR => self.clear(),
             FORK => self.fork(),
+            command if is_command(command, COMPACT) => self.compact(),
             command if command.starts_with(RESUME) => {
                 self.resume(command[RESUME.len()..].trim());
             }
@@ -393,6 +397,20 @@ impl<'a> Agent<'a> {
         self.session_starts(fork, Start::Fork);
         self.screen
             .log(format!("forked: session {}", self.session()));
+        self.turns.end();
+        self.screen.idle();
+    }
+
+    /// `/compact`, with or without instructions after it, as Claude Code 2.1.329 runs it: it
+    /// compacts the session in place, so the session goes on under the same ID, with no
+    /// `SessionEnd`. Its `SessionStart` hooks run from `compact`, and the context they print
+    /// shows as on any start. It is no prompt: no `UserPromptSubmit`, no turn, no `Stop`. It
+    /// stays idle at its input line.
+    fn compact(&mut self) {
+        if let Some(session) = self.session.clone() {
+            self.session_starts(session, Start::Compact);
+        }
+        self.screen.log("compacted");
         self.turns.end();
         self.screen.idle();
     }
@@ -536,6 +554,13 @@ impl<'a> Agent<'a> {
         }
         Next::GoOn
     }
+}
+
+/// Whether `typed` is Claude Code's `command`, alone or with text after a space.
+fn is_command(typed: &str, command: &str) -> bool {
+    typed
+        .strip_prefix(command)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
 }
 
 /// Edits the input line `typed` with `key`, which neither submits it nor exits.
