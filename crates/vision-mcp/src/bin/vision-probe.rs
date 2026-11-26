@@ -1,10 +1,7 @@
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use vision_signal::{FrameMarker, parse_acknowledgement_request};
-
-const WORK: Duration = Duration::from_millis(500);
 
 const REACTION: Duration = Duration::from_millis(200);
 
@@ -18,24 +15,25 @@ struct State {
     mouse: String,
     dropped: String,
     work: String,
+    working: Option<String>,
     pressed: Option<((u32, u32), bool)>,
     marker: FrameMarker,
 }
 
 fn main() {
     let (rows, columns) = size();
-    let state = Arc::new(Mutex::new(State {
+    let mut state = State {
         marker: FrameMarker {
             columns,
             rows,
             ..FrameMarker::default()
         },
         ..State::default()
-    }));
+    };
     // The alternate screen, SGR mouse reports with motion while a button is down, bracketed
     // paste, no cursor.
     print_raw("\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[?25l");
-    paint(&state);
+    paint(&mut state);
     let mut input = Vec::new();
     let mut buffer = [0; 4096];
     let mut stdin = std::io::stdin().lock();
@@ -46,14 +44,14 @@ fn main() {
             return;
         }
         input.extend_from_slice(&buffer[..read]);
-        let consumed = handle(&state, &input);
+        let consumed = handle(&mut state, &input);
         input.drain(..consumed);
         std::thread::sleep(REACTION);
-        paint(&state);
+        paint(&mut state);
     }
 }
 
-fn handle(state: &Arc<Mutex<State>>, input: &[u8]) -> usize {
+fn handle(state: &mut State, input: &[u8]) -> usize {
     let mut at = 0;
     while at < input.len() {
         let rest = &input[at..];
@@ -62,7 +60,6 @@ fn handle(state: &Arc<Mutex<State>>, input: &[u8]) -> usize {
                 return at;
             };
             let text = String::from_utf8_lossy(&rest[PASTE_START.len()..end]).into_owned();
-            let mut state = lock(state);
             match parse_acknowledgement_request(&text) {
                 Some(request) => state.marker.acknowledged = request,
                 None => state.pasted = text,
@@ -72,7 +69,7 @@ fn handle(state: &Arc<Mutex<State>>, input: &[u8]) -> usize {
             let Some(end) = rest.iter().position(|byte| *byte == b'M' || *byte == b'm') else {
                 return at;
             };
-            mouse(&mut lock(state), &rest[3..end], rest[end] == b'm');
+            mouse(state, &rest[3..end], rest[end] == b'm');
             end + 1
         } else if rest[0] == b'\x1b' {
             // Another escape sequence: up to its final byte.
@@ -94,23 +91,21 @@ fn handle(state: &Arc<Mutex<State>>, input: &[u8]) -> usize {
     at
 }
 
-fn key(state: &Arc<Mutex<State>>, byte: u8) {
-    let mut locked = lock(state);
+fn key(state: &mut State, byte: u8) {
     match byte {
         b'\r' => {
-            let typed = locked.typed.clone();
-            locked.work = format!("working on {typed}");
-            let state = Arc::clone(state);
-            std::thread::spawn(move || {
-                std::thread::sleep(WORK);
-                lock(&state).work = format!("done: {typed}");
-                paint(&state);
-            });
+            state.work = format!("working on {}", state.typed);
+            state.working = Some(state.typed.clone());
+        }
+        b'\t' => {
+            if let Some(typed) = state.working.take() {
+                state.work = format!("done: {typed}");
+            }
         }
         0x7f => {
-            locked.typed.pop();
+            state.typed.pop();
         }
-        byte if byte >= 0x20 => locked.typed.push(char::from(byte)),
+        byte if byte >= 0x20 => state.typed.push(char::from(byte)),
         _ => {}
     }
 }
@@ -145,8 +140,7 @@ fn mouse(state: &mut State, report: &[u8], released: bool) {
     }
 }
 
-fn paint(state: &Mutex<State>) {
-    let mut state = lock(state);
+fn paint(state: &mut State) {
     state.marker.frame += 1;
     let screen = format!(
         "\x1b[H\x1b[2Jvision probe\r\ntyped: {}\r\npasted: {}\r\nmouse: {}\r\ndropped: {}\r\n\
@@ -186,8 +180,4 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
-}
-
-fn lock(state: &Mutex<State>) -> std::sync::MutexGuard<'_, State> {
-    state.lock().unwrap_or_else(PoisonError::into_inner)
 }

@@ -243,6 +243,7 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         "{}",
         entered.text
     );
+    hc(vision, &["keys", "t1", "tab"]);
     let done = call(client, "wait_for", json!({"text": "done: hello"})).await;
     assert!(!done.error, "{}", done.text);
     assert!(done.summary["frame"].is_u64(), "{}", done.summary);
@@ -271,13 +272,7 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     );
 
     let shell = clicked.summary["terminal"].as_str().unwrap().to_owned();
-    let waiting = call(
-        client,
-        "type",
-        json!({"text": "stty -echo; read line; stty echo; sleep 0.5; echo $((7 * 9))\n"}),
-    )
-    .await;
-    assert!(!waiting.error, "{}", waiting.text);
+    reads_with_no_echo(client, &shell, "7 * 9").await;
     herdr_app(vision, &["do", "pane.focus", r#"{"terminal": "t1"}"#]);
     call(client, "settle", json!({"pixels": true})).await;
     hc(vision, &["keys", &shell, "enter"]);
@@ -373,14 +368,9 @@ async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) 
     assert!(missing.error);
     assert!(missing.text.contains("42"), "{}", missing.text);
 
-    let waiting = call(
-        client,
-        "type",
-        json!({"text": "stty -echo; read line; stty echo; sleep 0.5; echo $((6 * 9))\n"}),
-    )
-    .await;
-    assert!(!waiting.error, "{}", waiting.text);
     let shell = shown.summary["terminal"].as_str().unwrap();
+    reads_with_no_echo(client, shell, "6 * 9").await;
+    call(client, "settle", json!({})).await;
     hc(vision, &["keys", shell, "enter"]);
     let settled = call(client, "settle", json!({})).await;
     assert_eq!(
@@ -388,4 +378,24 @@ async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) 
         json!({"changed": true, "settled": true})
     );
     assert!(settled.text.contains(": 54"), "{}", settled.text);
+}
+
+/// An Enter that reached the shell before `stty -echo` would show at once, so the test waits
+/// for the line printed after it. herdr-app's pane header shows the terminal's foreground
+/// program, half a second late, and draws `sh` as it draws the idle shell: `stty` and `sleep`
+/// run from the interactive shell would change it, while inside one `sh -c` the foreground
+/// stays `sh`.
+async fn reads_with_no_echo(client: &Client, shell: &str, product: &str) {
+    let command = format!(
+        "sh -c 'stty -echo; echo reading $((1 + 1)); read line; stty echo; sleep 0.5; echo $(({product}))'\n"
+    );
+    let typed = call(client, "type", json!({ "text": command })).await;
+    assert!(!typed.error, "{}", typed.text);
+    let reading = call(
+        client,
+        "wait_for",
+        json!({"text": "reading 2", "terminal": shell}),
+    )
+    .await;
+    assert!(!reading.error, "{}", reading.text);
 }
