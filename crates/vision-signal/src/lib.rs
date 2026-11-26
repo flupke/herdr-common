@@ -17,7 +17,7 @@
 //!   in a terminal whose shell paints none.
 //!
 //! This is the one crate of herdr-common that an app links into what it builds, so it has no
-//! dependency, and an app takes it as a `git` dependency (ADR 0003).
+//! dependency, and an app takes it as a `git` dependency.
 
 /// The terminal title a frame marker starts with.
 const TITLE_PREFIX: &str = "vision";

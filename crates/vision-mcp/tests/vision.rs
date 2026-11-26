@@ -139,8 +139,8 @@ async fn restart(vision: &VisionTools, what: Restart) {
 
 /// Wait for the shell that replaced the probe in `terminal` to show its prompt, which the probe
 /// never shows: the restart ended the probe, and kept its terminal at its address. The window's
-/// view of the terminal takes input only a moment later, once it reattached
-/// (`.agents/wiki/app-sandbox.md`), so the test drives a new probe instead.
+/// view of the terminal drops keys until it reattached, a moment later, and nothing says when,
+/// so the test drives a new probe instead.
 async fn sees_the_kept_shell(client: &Client, terminal: &str) {
     let prompt = call(
         client,

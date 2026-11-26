@@ -8,7 +8,7 @@ status-level = "fail"
 # agents then ran nextest by hand to see them.
 fail-fast = false
 final-status-level = "slow"
-# A test waits on events, never on the clock (.agents/wiki/unit-tests.md), so one still
+# A test waits on events, never on the clock (CODING_STANDARDS.md, Tests), so one still
 # running after two minutes is stuck: nextest ends it and reports it as failed, instead of
 # leaving the whole run waiting. This is every test's hang guard.
 slow-timeout = { period = "10s", terminate-after = 12 }

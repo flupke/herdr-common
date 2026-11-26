@@ -147,7 +147,8 @@ impl Vision {
     /// core's terminals, and connects to the window once it opens again. After a core restart
     /// and a window's, it returns once the window's pixels settled, or after two seconds. A
     /// kept terminal's shell comes back a moment later, and its view in the window drops keys
-    /// until it reattached (`.agents/wiki/app-sandbox.md`, Restarts). While a
+    /// until it reattached, which no event says: type into it once the window shows its shell,
+    /// or through `hc send`. While a
     /// [`Restart::Reboot`] keeps the window closed, the tools that need it fail, and `screen`
     /// and `wait_for` read a terminal named by its address.
     pub fn restart(&mut self, what: Restart) -> Result<()> {

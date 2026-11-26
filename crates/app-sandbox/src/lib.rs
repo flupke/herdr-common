@@ -469,8 +469,9 @@ impl AppSandbox {
     /// test that picks its port on the host avoids that. A connection the sandbox's port
     /// refuses closes at once.
     ///
-    /// In bubblewrap each connection runs socat, from this process's `PATH`, in the sandbox,
-    /// where it shows among [`processes`](Self::processes) while the connection lasts. In plain
+    /// In bubblewrap it needs `socat` on this process's `PATH`, as the dev shell gives it: each
+    /// connection runs socat in the sandbox, where it shows among
+    /// [`processes`](Self::processes) while the connection lasts. In plain
     /// isolation the sandbox shares the host's network, and this does nothing.
     pub fn forward(&self, port: u16) -> Result<()> {
         ensure!(
@@ -493,7 +494,9 @@ impl AppSandbox {
             // Once one side closes, socat waits this long for the other side's end, half a
             // second by default: a request whose client half-closes keeps its answer. Its
             // standard input is a socket, which `shut-down` shuts down rather than closes, as
-            // the forward expects.
+            // the forward expects. With `STDIO`, even on a socket, socat passes on the end of a
+            // server that closes first (HTTP's `Connection: close`) only once its input ends,
+            // and the host's client, which cannot half-close, waits until `-t`.
             relay.args([
                 "-t",
                 "3600",

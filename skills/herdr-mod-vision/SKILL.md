@@ -75,7 +75,9 @@ For each behaviour your change touched:
    the mod when you need detail: `$S tool ffmpeg -v error -y -i step-N.png -vf crop=W:H:X:Y
    crop.png`, with the coordinates read off the full shot.
 
-A link the mod opens lands in `<directory>/opened.log`, never in a browser. Paths under
+The sandbox's `/tmp`, which holds your scratchpad on the host, is its own: a path you give
+`run` or `herdr-app` is a path inside, and `shot` writes its file from outside, to a path of
+yours. A link the mod opens lands in `<directory>/opened.log`, never in a browser. Paths under
 `<directory>` are `/proc/<PID>/root/...`, which `cat`, `cp` and `jq` open but Claude Code's Read
 does not: copy a file out before you Read it.
 

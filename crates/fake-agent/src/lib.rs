@@ -9,7 +9,9 @@
 //! test that a launcher script runs: [`run`] with the app's [`App`] and the arguments
 //! Claude Code was launched with. The program is what Herdr launches as `claude` (or `codex`): a
 //! link of that name to it, or a launcher script, first on the pane's `PATH`. What changes from
-//! one test to the next reaches it in its environment ([`variables`]).
+//! one test to the next reaches it in its environment ([`variables`]). An app runs it from
+//! a program of its own rather than this crate's binary, since cargo builds no binary of a
+//! dependency for its depender.
 //!
 //! The same program plays the rest of Claude Code that the apps' tests need: a fork Claude Code
 //! runs in print mode (`-p --resume <parent> --fork-session`), and, as the hook of a real Claude

@@ -28,7 +28,7 @@
         };
 
       # The Herdr release that the tests run, whatever Herdr is installed.
-      # .agents/wiki/herdr-tools.md says how to change it.
+      # The pin-herdr-tools skill says how to change it.
       herdrVersion = "0.9.5";
       herdrAssets = {
         aarch64-darwin = {
@@ -46,12 +46,14 @@
       };
       # The herdr-app and herdr-core (`hc`) releases that the tests run, whatever is installed:
       # Linux only, since the sandbox that runs them is bubblewrap.
-      # .agents/wiki/herdr-tools.md says how to change them.
+      # The pin-herdr-tools skill says how to change them.
       herdrAppVersion = "0.1.13";
       herdrAppAssets = {
         aarch64-linux = "2e5bb05c47cffbad018ad34217ea4c816476d7eb842692f740798c9020f0281e";
         x86_64-linux = "77b0be72a46ca14bb367365a04164641f914b3a69712bac391d39c56a959bef4";
       };
+      # Keep hc at 0.1.20 or later: 0.1.19 and earlier type a `terminal.send` its caller gave up
+      # on late, so a resend can double a prompt.
       hcVersion = "0.1.20";
       hcAssets = {
         aarch64-linux = "5f3037379d15cc76cfc72d2fd1a4262ea1c5b24df278bf7cfd8adcff7b914862";

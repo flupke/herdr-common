@@ -25,6 +25,11 @@ const INSIDE: &str = "/tmp";
 /// as the [`user_directories`](crate::user_directories): each shows empty inside, under a tmpfs
 /// of its own, while the host's copy stays as it was.
 ///
+/// A bubble run alone, with no app sandbox, is only as isolated as its caller makes it: it masks
+/// the directories the caller gives, and passes the environment the caller gives
+/// [`command`](Self::command) or [`launch`](Self::launch) as it is, the user's displays and Herdr variables included. On
+/// [`Network::Host`] only that environment keeps a program off the user's display.
+///
 /// It ends once it lets go of its init's standard input: on [`end`](Self::end), on a drop, and
 /// when the process that holds it dies, since the kernel then closes the pipe.
 ///
