@@ -1,13 +1,8 @@
-//! What crosses the event socket between a test and its fake agents: one JSON line per
-//! [`Event`] from a fake agent, one per [`Command`] from the test.
-
 use serde::{Deserialize, Serialize};
 
-/// Which fake agent a connection is.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Role {
-    /// A fake agent in a pane, by its name: [`crate::variables::NAME`], or else its pane.
     Agent { name: String },
     /// A fork Claude Code runs in print mode (`-p --resume <parent> --fork-session`), which
     /// takes the session `session`.
@@ -15,12 +10,10 @@ pub enum Role {
 }
 
 impl Role {
-    /// The fake agent named `name`, such as the pane it runs in.
     pub fn agent(name: impl Into<String>) -> Self {
         Self::Agent { name: name.into() }
     }
 
-    /// The fork that takes the session `session`.
     pub fn fork(session: impl Into<String>) -> Self {
         Self::Fork {
             session: session.into(),
@@ -28,7 +21,6 @@ impl Role {
     }
 }
 
-/// What a fake agent reports.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
@@ -48,7 +40,6 @@ pub enum Event {
     /// `startup`, `resume`, `clear`, `fork` or `compact`. The fake agent reports it in Herdr
     /// 0.9 alone; a real Claude Code's observing hook, in any terminal.
     SessionReported { session: String, start: String },
-    /// It reported its state to Herdr itself ([`crate::variables::REPORT_STATE`]).
     StateReported { state: String },
     /// Herdr released it: Herdr reads its title from now on.
     Released,
@@ -76,7 +67,6 @@ pub enum Event {
     Obeyed { command: Command },
     /// It exits: `/exit` or Ctrl-D in its pane, or [`Command::Exit`].
     Exited,
-    /// A fork started on `prompt`, from the session `parent`.
     ForkStarted { parent: String, prompt: String },
     /// The connection closed: the fake agent's process ended, however it ended. The test's
     /// side reports it; no fake agent writes it.
@@ -131,20 +121,16 @@ pub enum Command {
     CallTool { name: String },
 }
 
-/// One event, and the fake agent that reported it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Reported {
     pub from: Role,
     pub event: Event,
 }
 
-/// The prompt that a fake agent reads as the marker `id`: it reports [`Event::Marker`] and
-/// does nothing else with it.
 pub(crate) fn marker_prompt(id: u64) -> String {
     format!("{MARKER} {id}")
 }
 
-/// The marker a prompt is, if it is one.
 pub(crate) fn marker_of(prompt: &str) -> Option<u64> {
     prompt.trim().strip_prefix(MARKER)?.trim().parse().ok()
 }

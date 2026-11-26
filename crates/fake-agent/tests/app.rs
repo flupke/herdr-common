@@ -1,13 +1,8 @@
-//! What an app gives its fake agent in its [`App`]: the arguments of its hook program, and what
-//! the agent reads with a prompt. An app runs the fake agent from a program of its own, as this
-//! test binary does: its harness runs as the fake agent.
-
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Command as Process, Stdio};
 
 use fake_agent::{App, Command, Event, Events, Role, variables};
 
-/// The app's hook: it logs its arguments.
 const HOOK: &str =
     "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' \"$*\" >> \"$(dirname \"$0\")/hooks.log\"\n";
 

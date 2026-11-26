@@ -1,10 +1,3 @@
-//! An agent drives apps in the app sandbox through the vision tools, as an app's MCP server
-//! serves them: a program that speaks vision-signal, whose every action returns the frame that
-//! shows its reaction, and a shell, which speaks nothing and is seen through its pixels. settle
-//! waits for both to show a change made through the core, as an app's own tools make, and on
-//! the whole window's pixels for a change beside the focused program. The
-//! tools see and drive the app again after each restart of its core, its window, or both.
-
 use app_sandbox::{AppSandbox, Isolation, Options, Programs, Restart};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
@@ -13,7 +6,6 @@ use rmcp::{RoleClient, ServerHandler, ServiceExt, tool_handler};
 use serde_json::{Value, json};
 use vision_mcp::{Vision, VisionTools};
 
-/// An app's MCP server: the vision tools, which an app adds its own to.
 struct App {
     vision: VisionTools,
     router: ToolRouter<Self>,
@@ -22,7 +14,6 @@ struct App {
 #[tool_handler(router = self.router)]
 impl ServerHandler for App {}
 
-/// A tool call's result: its summary, the screen's text, and whether it is an error.
 struct Called {
     summary: Value,
     text: String,
@@ -94,14 +85,10 @@ async fn sees_and_drives_the_app_after_each_restart(isolation: Isolation) {
 
     let probe = shown.summary["terminal"].as_str().unwrap().to_owned();
 
-    // A core restart ends the probe with every program of the core's terminals: its terminal
-    // comes back as a shell, at its address, and the window runs a new core.
     restart(&vision, Restart::Core).await;
     sees_the_kept_shell(&client, &probe).await;
     let probe = drives_a_new_probe(&client, &vision).await;
 
-    // While a reboot keeps the window closed, what needs the window is an error that says
-    // so, and the core started alone shows its terminals by their address.
     restart(&vision, Restart::Reboot).await;
     let pressed = call(&client, "key", json!({"keys": ["a"]})).await;
     assert!(
@@ -121,7 +108,6 @@ async fn sees_and_drives_the_app_after_each_restart(isolation: Isolation) {
     stop(client, &vision).await;
 }
 
-/// Restart the session's app as `what` says.
 async fn restart(vision: &VisionTools, what: Restart) {
     let session = vision.session().clone();
     tokio::task::spawn_blocking(move || {
@@ -137,10 +123,8 @@ async fn restart(vision: &VisionTools, what: Restart) {
     .unwrap();
 }
 
-/// Wait for the shell that replaced the probe in `terminal` to show its prompt, which the probe
-/// never shows: the restart ended the probe, and kept its terminal at its address. The window's
-/// view of the terminal drops keys until it reattached, a moment later, and nothing says when,
-/// so the test drives a new probe instead.
+/// The window's view of the terminal drops keys until it reattached, a moment later, and
+/// nothing says when, so the test drives a new probe instead.
 async fn sees_the_kept_shell(client: &Client, terminal: &str) {
     let prompt = call(
         client,
@@ -151,8 +135,6 @@ async fn sees_the_kept_shell(client: &Client, terminal: &str) {
     assert!(!prompt.error, "{}", prompt.text);
 }
 
-/// Open a space that runs a new probe, and drive it: the frame that acknowledges the typing
-/// shows it. Returns the probe's terminal.
 async fn drives_a_new_probe(client: &Client, vision: &VisionTools) -> String {
     herdr_app(vision, &["do", "space.new", &probe_space()]);
     let shown = call(client, "wait_for", json!({"text": "vision probe"})).await;
@@ -163,7 +145,6 @@ async fn drives_a_new_probe(client: &Client, vision: &VisionTools) -> String {
     typed.summary["terminal"].as_str().unwrap().to_owned()
 }
 
-/// Stop the session, which leaves no process behind.
 async fn stop(client: Client, vision: &VisionTools) {
     client.cancel().await.unwrap();
     let stopped = vision
@@ -177,15 +158,12 @@ async fn stop(client: Client, vision: &VisionTools) {
     assert_eq!(stopped.processes, Vec::<u32>::new());
 }
 
-/// The arguments of `space.new` for a space that runs the probe.
 fn probe_space() -> String {
     let app = env!("CARGO_BIN_EXE_vision-probe");
     let argv = json!(["sh", "-c", format!("stty raw -echo && exec '{app}'")]);
     json!({"name": "app", "argv": argv}).to_string()
 }
 
-/// A sandbox in `isolation` whose first space runs the probe, served by an app's MCP server,
-/// and a client of that server.
 async fn start(isolation: Isolation) -> (Client, VisionTools) {
     let options = Options {
         isolation,
@@ -219,8 +197,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     assert!(!shown.error, "{}", shown.text);
     assert_eq!(shown.summary.get("changed_rows"), None);
 
-    // Each action returns the screen of the frame that acknowledged it: no wait_for needed.
-    // The rows that changed since the screen before are the typed text's alone.
     let typed = call(client, "type", json!({"text": "hello"})).await;
     assert!(typed.summary["reaction"]["acknowledged"]["frame"].is_u64());
     assert!(typed.text.contains("typed: hello"), "{}", typed.text);
@@ -254,7 +230,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
 
     holds_a_drag(client, vision).await;
 
-    // A mistake is an error, and gives no input: no key of the list is pressed.
     let unknown = call(client, "key", json!({"keys": ["a", "nosuchkey"]})).await;
     assert!(unknown.error && unknown.text.contains("nosuchkey"));
     let outside = call(client, "click", json!({"x": 1200, "y": 0})).await;
@@ -262,7 +237,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     let screen = call(client, "screen", json!({})).await;
     assert!(screen.text.contains("typed: hello\n"), "{}", screen.text);
 
-    // Asynchronous work shows after the action returned.
     let entered = call(client, "key", json!({"keys": ["enter"]})).await;
     assert!(
         entered.text.contains("work: working on hello"),
@@ -273,8 +247,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     assert!(!done.error, "{}", done.text);
     assert!(done.summary["frame"].is_u64(), "{}", done.summary);
 
-    // A key the core sends, as an app's own tools change it, shows once settle returns: the
-    // probe paints it late, in the frame that acknowledges the request settle pastes.
     hc(vision, &["keys", "t1", "x"]);
     let settled = call(client, "settle", json!({})).await;
     assert!(settled.summary["reaction"]["acknowledged"]["frame"].is_u64());
@@ -286,8 +258,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         .unwrap();
     assert_eq!((png.info().width, png.info().height), (1200, 800));
 
-    // A click that moves the focus to a shell beside it gets its reaction from the pixels,
-    // and pastes no acknowledgement request into the shell.
     herdr_app(vision, &["do", "pane.split", r#"{"direction": "right"}"#]);
     herdr_app(vision, &["do", "pane.focus", r#"{"terminal": "t1"}"#]);
     let clicked = call(client, "click", json!({"x": 1100, "y": 400})).await;
@@ -300,8 +270,6 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
         clicked.text
     );
 
-    // With pixels, settle waits on the whole window, though the probe has the focus: the
-    // shell beside it, released from a read that waits with no echo, prints half a second on.
     let shell = clicked.summary["terminal"].as_str().unwrap().to_owned();
     let waiting = call(
         client,
@@ -323,11 +291,7 @@ async fn drives_a_program_that_speaks_vision_signal(client: &Client, vision: &Vi
     assert!(beside.text.contains(": 63"), "{}", beside.text);
 }
 
-/// A held drag keeps the button down until the next drag or click, on the program and on
-/// herdr-app's own panels alike.
 async fn holds_a_drag(client: &Client, vision: &VisionTools) {
-    // A held drag shows the drag under way, and the next drag goes on with it, with no press;
-    // the next click drops it where it ended, then clicks.
     let held = call(
         client,
         "drag",
@@ -351,8 +315,6 @@ async fn holds_a_drag(client: &Client, vision: &VisionTools) {
     assert!(released.text.contains("mouse: click "), "{}", released.text);
     assert_eq!(shown_after(&released.text, "dropped: "), way);
 
-    // A held drag on herdr-app's own Spaces list, beside the program, drops too: the row of
-    // the second space, dragged above the first, moves there.
     herdr_app(vision, &["do", "space.new", r#"{"name": "two"}"#]);
     herdr_app(vision, &["do", "pane.focus", r#"{"terminal": "t1"}"#]);
     let held = call(
@@ -373,7 +335,6 @@ async fn holds_a_drag(client: &Client, vision: &VisionTools) {
     assert_eq!(spaces, ["two", "app"]);
 }
 
-/// The rest of the screen's line that holds `label`.
 fn shown_after<'a>(screen: &'a str, label: &str) -> &'a str {
     screen
         .lines()
@@ -382,13 +343,11 @@ fn shown_after<'a>(screen: &'a str, label: &str) -> &'a str {
         .1
 }
 
-/// Run `hc <arguments>` against the session's core.
 fn hc(vision: &VisionTools, arguments: &[&str]) -> Value {
     let session = vision.session().lock().unwrap();
     session.as_ref().unwrap().sandbox().hc(arguments).unwrap()
 }
 
-/// Run `herdr-app <arguments>` against the session's app.
 fn herdr_app(vision: &VisionTools, arguments: &[&str]) -> Value {
     let session = vision.session().lock().unwrap();
     session
@@ -400,7 +359,6 @@ fn herdr_app(vision: &VisionTools, arguments: &[&str]) -> Value {
 }
 
 async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) {
-    // A shell speaks no vision-signal: the window's pixels tell its reaction.
     herdr_app(vision, &["do", "space.new", r#"{"name": "shell"}"#]);
     let typed = call(client, "type", json!({"text": "echo $((6 * 7))\n"})).await;
     assert_eq!(typed.summary["reaction"]["pixels"]["changed"], true);
@@ -415,8 +373,6 @@ async fn sees_a_shell_through_its_pixels(client: &Client, vision: &VisionTools) 
     assert!(missing.error);
     assert!(missing.text.contains("42"), "{}", missing.text);
 
-    // A key the core sends shows once settle returns, by the pixels: it releases a read that
-    // waits with no echo, so the window changes only when the output comes, half a second on.
     let waiting = call(
         client,
         "type",

@@ -1,7 +1,3 @@
-//! The hook that a real Claude Code runs in the fake agent's place ([`crate::observing_hooks`]):
-//! it reports what the agent does on the event socket, as the fake agent reports it, so that
-//! one test body waits on the same events whichever agent runs in the pane.
-
 use std::io::Read as _;
 use std::path::Path;
 use std::sync::mpsc;
@@ -16,9 +12,6 @@ use crate::{App, variables};
 /// session it started as [`Event::SessionReported`] and [`Event::SessionStarted`]. A
 /// subagent's session is not the agent's, nor is a fork's: a fork runs the agent's hooks,
 /// since it inherits its configuration.
-///
-/// # Panics
-/// Panics when its payload is no JSON, or the event socket is not there.
 pub(crate) fn run(app: &App) {
     let mut payload = String::new();
     std::io::stdin()

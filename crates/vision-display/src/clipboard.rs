@@ -1,7 +1,3 @@
-//! The display's clipboard, which this process owns while it offers a text: a window of its own
-//! holds the `CLIPBOARD` selection, and a thread hands the text to each window that asks for
-//! it, as a person's clipboard manager would.
-
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::thread::JoinHandle;
 
@@ -16,17 +12,14 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME, NONE};
 
-/// The atoms the clipboard speaks.
 #[derive(Clone, Copy)]
 struct Atoms {
     clipboard: Atom,
     targets: Atom,
     utf8: Atom,
-    /// The text targets it answers, besides `utf8`.
     texts: [Atom; 3],
 }
 
-/// What the clipboard offers, and who waits for a window to read it.
 #[derive(Default)]
 struct Offer {
     text: Vec<u8>,
@@ -42,8 +35,6 @@ pub(crate) struct Clipboard {
 }
 
 impl Clipboard {
-    /// Create the clipboard's window on `connection`, a connection of its own, and the thread
-    /// that answers the windows that ask for the text.
     pub(crate) fn start(connection: RustConnection) -> Result<Self> {
         let connection = Arc::new(connection);
         let root = connection.setup().roots[0].root;
@@ -59,7 +50,6 @@ impl Clipboard {
             0,
             WindowClass::INPUT_ONLY,
             x11rb::COPY_FROM_PARENT,
-            // Its destruction ends the thread.
             &CreateWindowAux::new().event_mask(EventMask::STRUCTURE_NOTIFY),
         )?;
         let atom = |name: &[u8]| -> Result<Atom> {
@@ -91,10 +81,7 @@ impl Clipboard {
         })
     }
 
-    /// Offer `text`, owning the clipboard, and return a channel that hears once a window read
-    /// it.
     pub(crate) fn offer(&self, text: &str) -> Result<mpsc::Receiver<()>> {
-        // One property of the requesting window holds the whole text: no incremental transfer.
         let limit = self.connection.maximum_request_bytes().saturating_sub(1024);
         ensure!(
             text.len() <= limit,
@@ -129,8 +116,6 @@ impl Drop for Clipboard {
     }
 }
 
-/// Answer each request for the clipboard of `window`, until it is destroyed or the display
-/// goes.
 fn serve(connection: &RustConnection, window: Window, atoms: Atoms, offer: &Mutex<Offer>) {
     loop {
         match connection.wait_for_event() {
@@ -146,7 +131,6 @@ fn serve(connection: &RustConnection, window: Window, atoms: Atoms, offer: &Mute
     }
 }
 
-/// Give the requestor of `request` the text, or the targets it can have, and tell it.
 fn answer(
     connection: &RustConnection,
     atoms: Atoms,

@@ -1,9 +1,3 @@
-//! A sandbox runs the pinned herdr-app on its own display, shows its window in a screenshot,
-//! and leaves nothing behind once it stops, in each isolation; its `xdg-open` runs the desktop
-//! entry that claims a link's scheme, as on a desktop, the caller's `BROWSER` runs, and the host
-//! reads the files it wrote;
-//! the host reaches a port of its loopback through a forward.
-
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -35,7 +29,6 @@ fn shoots_the_pinned_app_then_leaves_nothing_behind(isolation: Isolation) {
         .collect();
     assert!(colours.len() > 2, "the window drew nothing: {colours:?}");
 
-    // A space with a terminal, whose shell the core runs.
     sandbox
         .herdr_app(&["do", "space.new", r#"{"name": "alpha"}"#])
         .unwrap();
@@ -56,7 +49,6 @@ fn shoots_the_pinned_app_then_leaves_nothing_behind(isolation: Isolation) {
     assert!(!directory.exists());
 }
 
-/// The PID of the process `pid` in its own PID namespace: the last of its `NSpid`.
 fn inner_pid(pid: u32) -> Option<String> {
     let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
     let line = status
@@ -65,7 +57,6 @@ fn inner_pid(pid: u32) -> Option<String> {
     line.split_whitespace().last().map(str::to_owned)
 }
 
-/// Whether the process `pid` ended: gone, or a zombie its new parent has yet to reap.
 fn ended(pid: u32) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |stat| {
         stat.rsplit_once(')')
@@ -85,7 +76,6 @@ fn plain() {
 
 #[test]
 fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme_or_the_caller_s_browser() {
-    // The handler below, as the sandbox's processes see it: `/tmp` in bubblewrap.
     let options = Options {
         environment: vec![("BROWSER".into(), "/tmp/handler".into())],
         ..Options::default()
@@ -102,7 +92,6 @@ fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme_or_the_caller_s_br
     )
     .unwrap();
     std::fs::set_permissions(&handler, std::fs::Permissions::from_mode(0o755)).unwrap();
-    // The scheme's `+`, which a scheme may hold, matches as itself, not as a pattern.
     std::fs::create_dir_all(outside.join("data/applications")).unwrap();
     std::fs::write(
         outside.join("data/applications/test-link.desktop"),
@@ -114,7 +103,6 @@ fn opens_a_link_with_the_desktop_entry_that_claims_its_scheme_or_the_caller_s_br
     )
     .unwrap();
 
-    // The app runs the `xdg-open` its PATH finds.
     for link in ["sandbox+test://agent/1", "https://example.com/"] {
         let status = sandbox
             .command(Path::new("xdg-open"))
@@ -147,9 +135,7 @@ fn reaches_a_port_of_the_bubblewrap_loopback_through_a_forward_until_it_stops() 
     );
 
     sandbox.forward(echoing.port).unwrap();
-    // Again, as a test does that forwards each port it reads: the forward stays.
     sandbox.forward(echoing.port).unwrap();
-    // A client that closes first, its request sent: it still reads the whole answer.
     let mut connection = TcpStream::connect(("127.0.0.1", echoing.port)).unwrap();
     connection.write_all(b"ping").unwrap();
     connection.shutdown(Shutdown::Write).unwrap();
@@ -157,8 +143,6 @@ fn reaches_a_port_of_the_bubblewrap_loopback_through_a_forward_until_it_stops() 
     connection.read_to_string(&mut echoed).unwrap();
     assert_eq!(echoed, "ping");
 
-    // A server that closes once it answered, as an HTTP server does: the host reads the end
-    // while its side stays open, as a client that cannot half-close keeps it.
     let mut answering = Server::inside(&sandbox, "SYSTEM:read request; echo answer to $request");
     sandbox.forward(answering.port).unwrap();
     let mut connection = TcpStream::connect(("127.0.0.1", answering.port)).unwrap();
@@ -177,7 +161,6 @@ fn reaches_a_port_of_the_bubblewrap_loopback_through_a_forward_until_it_stops() 
     }
 }
 
-/// A socat server inside the sandbox, on a port free on the host.
 struct Server {
     port: u16,
     process: Child,
@@ -186,8 +169,6 @@ struct Server {
 }
 
 impl Server {
-    /// Listen on the sandbox's loopback, and run socat's `address` for each connection; return
-    /// once it listens.
     fn inside(sandbox: &AppSandbox, address: &str) -> Self {
         let port = TcpListener::bind("127.0.0.1:0")
             .unwrap()

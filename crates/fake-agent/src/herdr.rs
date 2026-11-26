@@ -1,6 +1,3 @@
-//! What the fake agent tells Herdr 0.9 with its CLI, and hears from Herdr's socket: the status
-//! Herdr gives its pane's agent, and Herdr's detection of it.
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -14,7 +11,6 @@ use serde_json::{Value, json};
 /// session reported so.
 const INTEGRATION_SOURCE: &str = "herdr:";
 
-/// The Herdr 0.9 of the fake agent's pane, through its CLI.
 pub(crate) struct Herdr {
     cli: PathBuf,
     pane: String,
@@ -59,7 +55,6 @@ impl Herdr {
         ]);
     }
 
-    /// Reports `agent`'s state `state` to Herdr under [`crate::STATE_SOURCE`].
     pub(crate) fn report_state(&self, agent: &str, state: &str) {
         self.run(&[
             "pane",
@@ -74,7 +69,6 @@ impl Herdr {
         ]);
     }
 
-    /// Runs the Herdr CLI with `args`, which must succeed.
     fn run(&self, args: &[&str]) {
         let output = Command::new(&self.cli)
             .args(args)
@@ -90,7 +84,6 @@ impl Herdr {
     }
 }
 
-/// What Herdr says of the fake agent's pane.
 #[derive(Debug)]
 pub(crate) enum News {
     /// Herdr gives its agent this status: `working`, `idle`, `blocked`, `done`, `unknown`.
@@ -99,12 +92,6 @@ pub(crate) enum News {
     Detected { released: bool },
 }
 
-/// Subscribes to what Herdr, listening at `socket`, says of `pane`, and sends it on `news`,
-/// wrapped by `wrap`, from another thread: the agent's status now, then each change. The
-/// subscription holds once this returns, so the agent misses nothing it shows after.
-///
-/// # Panics
-/// Panics when Herdr refuses the subscription.
 pub(crate) fn follow<T: Send + 'static>(
     socket: &Path,
     pane: &str,
@@ -138,7 +125,6 @@ pub(crate) fn follow<T: Send + 'static>(
     Ok(())
 }
 
-/// The status Herdr gives the agent of `pane` now; none when it knows no agent there.
 fn status_now(socket: &Path, pane: &str) -> std::io::Result<Option<String>> {
     let mut stream = UnixStream::connect(socket)?;
     let request = json!({"id": "fake-agent", "method": "agent.get", "params": {"target": pane}});
@@ -149,7 +135,6 @@ fn status_now(socket: &Path, pane: &str) -> std::io::Result<Option<String>> {
         .map(str::to_owned))
 }
 
-/// What the event `envelope` of Herdr's stream says of `pane`, if anything.
 fn news_of(envelope: &Value, pane: &str) -> Option<News> {
     let data = &envelope["data"];
     // Herdr names an event with a dot, as its subscription, or an underscore, as its schema.

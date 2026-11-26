@@ -1,5 +1,3 @@
-//! A fake agent's end of the event socket.
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -8,14 +6,11 @@ use std::thread;
 
 use crate::protocol::{Command, Event, Role};
 
-/// The connection of one fake agent to the test.
 pub(crate) struct Connection {
     writer: Mutex<UnixStream>,
 }
 
 impl Connection {
-    /// Connects to the socket at `path` as `role`, says so, and returns the connection and the
-    /// commands the test sends, which `wrap` turns into what the caller reads.
     pub(crate) fn connect<T: Send + 'static>(
         path: &Path,
         role: Role,
@@ -43,12 +38,10 @@ impl Connection {
         Ok(connection)
     }
 
-    /// Reports `event` to the test.
     pub(crate) fn report(&self, event: &Event) {
         let mut line = serde_json::to_vec(event).expect("an event is JSON");
         line.push(b'\n');
         let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
-        // A test that already ended no longer reads.
         let _ = writer.write_all(&line);
     }
 }

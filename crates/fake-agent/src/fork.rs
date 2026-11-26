@@ -1,10 +1,3 @@
-//! A fork Claude Code runs in print mode (`-p --resume <parent> --fork-session`), with its
-//! stream of JSON lines on its standard output. It records its arguments, environment, settings
-//! and prompt in its [`Directory`], copies its parent's transcript, runs its settings'
-//! `SessionStart` hooks and prints them as Claude Code does, then works until the test ends its
-//! turn or crashes it, or its caller stops it. It reports each step on the event socket, and
-//! takes its commands there.
-
 use std::fs;
 use std::io::{self, Read as _, Write as _};
 use std::path::Path;
@@ -17,13 +10,8 @@ use crate::launch::{self, flag_value};
 use crate::protocol::{Command, Event, Role};
 use crate::{App, Directory, transcript, variables};
 
-/// The usage each of its answers reports.
 const USAGE: &str = r#"{"input_tokens":3,"cache_creation_input_tokens":20,"cache_read_input_tokens":1000,"output_tokens":7}"#;
 
-/// Runs the fork that Claude Code's `args` start.
-///
-/// # Panics
-/// Panics when its arguments or environment lack what it needs.
 pub(crate) fn run(app: &App, args: &[String]) {
     let session = flag_value(args, "--session-id").unwrap_or_else(launch::new_session_id);
     let parent = flag_value(args, "--resume").expect("a fork resumes its parent's session");
@@ -76,8 +64,6 @@ pub(crate) fn run(app: &App, args: &[String]) {
     });
 }
 
-/// Obeys the test's commands until it ends the fork's turn, or nobody follows the fork any
-/// more.
 fn work(connection: &Connection, commands: &mpsc::Receiver<Command>) {
     for (call, command) in commands.iter().enumerate() {
         match command {
@@ -105,7 +91,6 @@ fn work(connection: &Connection, commands: &mpsc::Receiver<Command>) {
     }
 }
 
-/// Copies the transcript of the session `parent` to `own`, then the fork's prompt.
 fn copy_parent(configuration: &Path, parent: &str, own: &Path) {
     let mut history = fs::read_to_string(transcript(configuration, parent))
         .unwrap_or_else(|error| panic!("the transcript of the fork's parent {parent}: {error}"));
@@ -116,7 +101,6 @@ fn copy_parent(configuration: &Path, parent: &str, own: &Path) {
     fs::write(own, history).expect("the fork's transcript");
 }
 
-/// Records what the fork of `session` started with, in `directory`.
 fn record(directory: &Directory, session: &str, args: &[String], settings: &str, prompt: &str) {
     let names: Vec<_> = std::env::vars_os()
         .map(|(name, _)| name.to_string_lossy().into_owned())
@@ -134,7 +118,6 @@ fn record(directory: &Directory, session: &str, args: &[String], settings: &str,
     }
 }
 
-/// Prints a line of Claude Code's stream.
 fn print(line: &serde_json::Value) {
     let mut out = io::stdout().lock();
     let _ = writeln!(out, "{line}");

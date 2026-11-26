@@ -1,4 +1,3 @@
-# The crates live in crates/<name>/: the glob takes each new one, so no change touches this list.
 [workspace]
 members = ["crates/*"]
 resolver = "3"

@@ -1,17 +1,11 @@
-//! What the fake agent shows in its pane, as the agent it plays shows it, for Herdr's detection
-//! to read and for whoever looks: its terminal title, its screen, and, on herdr-app, its state
-//! in OSC 7501.
-
 use std::io::Write as _;
 
 /// The rule Claude Code draws around its input line: a permission form after the last one is
 /// what Herdr reads as blocked.
 const RULE: &str = "────────────────────────────────────────";
 
-/// How many lines of what it did the screen keeps.
 const LOG_LINES: usize = 200;
 
-/// The agent the fake agent plays, by Herdr's name.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Plays {
     Claude,
@@ -19,7 +13,6 @@ pub(crate) enum Plays {
 }
 
 impl Plays {
-    /// The agent [`crate::variables::PLAYS`] names: Claude Code unless it says `codex`.
     pub(crate) fn from_env() -> Self {
         match std::env::var(crate::variables::PLAYS).as_deref() {
             Ok("codex") => Self::Codex,
@@ -44,7 +37,6 @@ impl Plays {
     }
 }
 
-/// Where the screen reports the agent's state besides its title.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StateReport {
     /// Nowhere: Herdr 0.9 reads the title and the screen.
@@ -53,22 +45,16 @@ pub(crate) enum StateReport {
     Osc,
 }
 
-/// The screen and the title of the fake agent.
 pub(crate) struct Screen {
     plays: Plays,
     report: StateReport,
-    /// What it did, a line each.
     log: Vec<String>,
     typed: String,
     suggestion: Option<String>,
-    /// Whether it shows a permission form instead of its input line.
     asking: bool,
     working: bool,
-    /// The name of its session, which its title shows.
     session_name: String,
-    /// The title the test gave it, shown outside its turns.
     title: Option<String>,
-    /// The screen the test gave it, shown while nothing is typed.
     shown: Option<String>,
 }
 
@@ -88,7 +74,6 @@ impl Screen {
         }
     }
 
-    /// Adds `line` to what it did, and draws.
     pub(crate) fn log(&mut self, line: impl Into<String>) {
         self.log.push(line.into());
         let excess = self.log.len().saturating_sub(LOG_LINES);
@@ -104,13 +89,11 @@ impl Screen {
         self.suggestion.is_some()
     }
 
-    /// The input line holds `typed` from now on.
     pub(crate) fn set_typed(&mut self, typed: String) {
         self.typed = typed;
         self.draw();
     }
 
-    /// Takes what is typed, to submit it: the suggestion ends.
     pub(crate) fn submit(&mut self) -> String {
         self.suggestion = None;
         let typed = std::mem::take(&mut self.typed);
@@ -138,8 +121,6 @@ impl Screen {
         self.show_title();
     }
 
-    /// Shows the agent idle: its idle title, and its input line, which closes any permission
-    /// form.
     pub(crate) fn idle(&mut self) {
         self.working = false;
         self.asking = false;
@@ -148,7 +129,6 @@ impl Screen {
         self.report_state("idle");
     }
 
-    /// Shows the agent working: a title that starts with a spinner.
     pub(crate) fn working(&mut self) {
         self.working = true;
         self.asking = false;
@@ -157,14 +137,12 @@ impl Screen {
         self.report_state("working");
     }
 
-    /// Shows the agent asking a permission: Claude Code's form under a rule.
     pub(crate) fn asking(&mut self) {
         self.asking = true;
         self.draw();
         self.report_state("blocked:kind=permission");
     }
 
-    /// The agent exits: herdr-app's core hears it go.
     pub(crate) fn exits(&self) {
         self.report_state("clear");
     }
@@ -196,8 +174,6 @@ impl Screen {
         }
     }
 
-    /// Draws the screen anew: what the test gave it while nothing is typed, or else what it
-    /// did, then its permission form or its input line between rules.
     fn draw(&self) {
         let mut lines: Vec<String> = Vec::new();
         match &self.shown {
@@ -216,8 +192,6 @@ impl Screen {
         write(&format!("\x1b[2J\x1b[H{}", lines.join("\r\n")));
     }
 
-    /// The input line: the text typed, else the suggestion, dim, as Claude Code draws its
-    /// suggested prompt.
     fn input_line(&self) -> String {
         let glyph = self.plays.prompt_glyph();
         match (&self.suggestion, self.typed.as_str()) {
@@ -227,7 +201,6 @@ impl Screen {
     }
 }
 
-/// Claude Code's permission form.
 const PERMISSION_FORM: [&str; 5] = [
     " Bash command",
     " Do you want to proceed?",
@@ -236,7 +209,6 @@ const PERMISSION_FORM: [&str; 5] = [
     " Esc to cancel",
 ];
 
-/// Writes `text` to the pane: standard output.
 pub(crate) fn write(text: &str) {
     let mut out = std::io::stdout().lock();
     let _ = out.write_all(text.as_bytes());

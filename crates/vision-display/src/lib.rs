@@ -1,7 +1,7 @@
 //! The window of an app on an X display, driven as its user would: keys, text and clicks sent
 //! through XTEST, which the X server delivers as a keyboard's and a mouse's, text pasted from
 //! the display's clipboard, and a hash of the window's pixels, which changes with anything it
-//! shows. The vision core reaches herdr-app so, on the headless display of its app sandbox.
+//! shows.
 //!
 //! The connection stays open for the display's life: Xwayland resets its XTEST device when its
 //! client leaves, which would lose the pointer's place and the keys held.
@@ -34,13 +34,9 @@ const WINDOW_POLL: Duration = Duration::from_millis(50);
 /// sooner can be lost, so [`Display::connect`] makes that motion.
 const POINTER_SETUP: Duration = Duration::from_millis(150);
 
-/// How many moves a drag takes the pointer through, and how long it waits before each one and
-/// before the release: an app sees a hand's drag, not a jump.
 const DRAG_STEPS: i32 = 12;
 const DRAG_PAUSE: Duration = Duration::from_millis(16);
 
-/// How long [`Display::paste`] waits for the window to read the clipboard: a guard that fires
-/// only when the key pasted nothing.
 const PASTE_GUARD: Duration = Duration::from_secs(10);
 
 const SHIFT: u32 = 0xffe1;
@@ -48,26 +44,21 @@ const CONTROL: u32 = 0xffe3;
 const ALT: u32 = 0xffe9;
 const SUPER: u32 = 0xffeb;
 
-/// A window of an X display, and the connection that sees and drives it.
 pub struct Display {
     connection: RustConnection,
     root: Window,
     window: Window,
     keymap: Keymap,
     clipboard: Clipboard,
-    /// Whether a held drag left the left button down, which the next drag goes on with and
-    /// the next click releases.
     held: Cell<bool>,
 }
 
-/// The display's keyboard: the keysyms of each keycode, from the lowest.
 struct Keymap {
     lowest: u8,
     per_keycode: u8,
     keysyms: Vec<u32>,
 }
 
-/// A key to press, with the modifiers held around it, as keysyms.
 #[derive(Debug, Eq, PartialEq)]
 struct Chord {
     modifiers: Vec<u32>,
@@ -126,7 +117,6 @@ impl Display {
         Ok((geometry.width, geometry.height))
     }
 
-    /// Whether a held drag keeps the left button down.
     pub fn held(&self) -> bool {
         self.held.get()
     }
@@ -248,7 +238,6 @@ impl Display {
         Ok(())
     }
 
-    /// The keycodes of `modifiers`, by name.
     fn modifiers<S: AsRef<str>>(&self, modifiers: &[S]) -> Result<Vec<u8>> {
         modifiers
             .iter()
@@ -256,7 +245,6 @@ impl Display {
             .collect()
     }
 
-    /// Press (`KEY_PRESS_EVENT`) or release `keys`, the release in reverse.
     fn hold(&self, keys: &[u8], kind: u8) -> Result<()> {
         if kind == KEY_PRESS_EVENT {
             keys.iter().try_for_each(|key| self.fake(kind, *key))
@@ -265,7 +253,6 @@ impl Display {
         }
     }
 
-    /// The display's point of the window's pixel at `x`, `y`.
     fn on_root(&self, x: u16, y: u16) -> Result<(i16, i16)> {
         let (width, height) = self.size()?;
         ensure!(
@@ -282,8 +269,6 @@ impl Display {
         Ok((to_root(x, origin.dst_x)?, to_root(y, origin.dst_y)?))
     }
 
-    /// Press each of `chords` in order, once the keyboard has a key for every one of them: when
-    /// one is missing, it presses none.
     fn press_all(&self, chords: &[Chord]) -> Result<()> {
         let keycodes = chords
             .iter()
@@ -295,8 +280,6 @@ impl Display {
         Ok(())
     }
 
-    /// The keycode of `chord`'s key, and those of the modifiers held around it, Shift included
-    /// when the key's keysym takes it.
     fn keycodes(&self, chord: &Chord) -> Result<(u8, Vec<u8>)> {
         let (key, shifted) = self.keymap.keycode(chord.key)?;
         let mut modifiers = chord
@@ -337,7 +320,6 @@ impl Display {
     }
 }
 
-/// A connection to the X display whose socket is `socket`.
 fn open(socket: &Path) -> Result<RustConnection> {
     let stream = UnixStream::connect(socket)
         .wrap_err_with(|| format!("cannot reach the X display at {}", socket.display()))?;
@@ -380,9 +362,7 @@ impl Keymap {
 }
 
 impl Chord {
-    /// `ctrl+shift+t`: modifiers, then a key's name or one character.
     fn parse(text: &str) -> Result<Self> {
-        // `ctrl++` holds Ctrl and presses `+`.
         let (modifiers, key) = match text.strip_suffix("++") {
             Some(modifiers) => (Some(modifiers), "+"),
             None if text == "+" => (None, "+"),
@@ -407,7 +387,6 @@ impl Chord {
     }
 }
 
-/// The keysym of a modifier's name: `ctrl`, `shift`, `alt`, `super`.
 fn modifier(name: &str) -> Result<u32> {
     match name.to_ascii_lowercase().as_str() {
         "ctrl" | "control" => Ok(CONTROL),
@@ -420,7 +399,6 @@ fn modifier(name: &str) -> Result<u32> {
     }
 }
 
-/// The keys [`named_key`] knows by name, with their keysyms, besides `f1`..`f12`.
 const NAMED_KEYS: [(&str, u32); 17] = [
     ("enter", 0xff0d),
     ("return", 0xff0d),
@@ -441,7 +419,6 @@ const NAMED_KEYS: [(&str, u32); 17] = [
     ("down", 0xff54),
 ];
 
-/// The keysym of a key's name: `enter`, `esc`, `f5`.
 fn named_key(name: &str) -> Option<u32> {
     if let Some((_, keysym)) = NAMED_KEYS.iter().find(|(named, _)| *named == name) {
         return Some(*keysym);
@@ -462,8 +439,6 @@ fn character_keysym(character: char) -> u32 {
     }
 }
 
-/// The viewable window under `parent`, itself included, titled `title`: the largest, since an
-/// app may keep small helper windows with its title.
 fn find_window(connection: &RustConnection, parent: Window, title: &str) -> Result<Option<Window>> {
     let utf8 = connection.intern_atom(false, b"UTF8_STRING")?.reply()?.atom;
     let net_name = connection

@@ -2,7 +2,6 @@ use super::*;
 use crate::connection::Connection;
 use crate::protocol::marker_of;
 
-/// A fake agent's connection as `role`, and the commands it gets.
 fn connect(path: &Path, role: Role) -> (Connection, mpsc::Receiver<Command>) {
     let (sender, commands) = mpsc::channel();
     let connection = Connection::connect(path, role, |command| command, sender).unwrap();
@@ -73,7 +72,6 @@ fn an_order_returns_what_came_before_the_fake_agent_s_answer() {
         let command = commands.recv().unwrap();
         other.report(&Event::TurnStarted);
         agent_connection.report(&Event::TurnEnded { blocked: None });
-        // An answer to another command, then the answer.
         agent_connection.report(&Event::Obeyed {
             command: Command::Exit,
         });
@@ -112,7 +110,6 @@ fn a_marker_returns_what_the_agent_reported_before_it() {
     agent_connection.report(&Event::TurnEnded { blocked: None });
 
     let before = events.mark(|prompt| {
-        // The fake agent reads the marker as its next prompt.
         agent_connection.report(&Event::Marker {
             id: marker_of(prompt).unwrap(),
         });
@@ -177,7 +174,6 @@ fn a_wait_on_every_event_sees_those_a_wait_in_turn_went_through() {
             .iter()
             .any(|reported| reported.event == Event::TurnStarted)
     );
-    // A wait in turn goes on after the events the previous one went through.
     assert_eq!(events.wait_for("the exit", |_| true).event, Event::Exited);
 }
 

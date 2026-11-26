@@ -1,6 +1,3 @@
-//! The fake agent in its pane: it reads the keys typed there and the test's commands, and does
-//! with them what the agent it plays does, one at a time.
-
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -18,9 +15,7 @@ use crate::transcript::Transcript;
 use crate::turns::Turns;
 use crate::{App, Directory, reply, variables};
 
-/// The command, typed in its pane, that ends Claude Code's session.
 const EXIT: &str = "/exit";
-/// The command, typed in its pane, that has Claude Code start a new session.
 const CLEAR: &str = "/clear";
 /// The command, typed in its pane, that has Claude Code fork its session into its background
 /// daemon.
@@ -28,33 +23,24 @@ const FORK: &str = "/bg";
 /// The command, typed in its pane alone or with instructions after a space, that has Claude
 /// Code compact its session.
 const COMPACT: &str = "/compact";
-/// The command, typed in its pane with a session's ID, that has Claude Code resume that
-/// session.
 const RESUME: &str = "/resume ";
 
 /// The report Claude Code submits once a session's background work ends.
 const BACKGROUND_REPORT: &str =
     "<task-notification>\n<task-id>bg0</task-id>\n<status>completed</status>\n</task-notification>";
 
-/// What reaches the agent, one at a time.
 enum Input {
-    /// The keys of one read of its pane.
     Keys(Vec<Key>),
     Command(Command),
     Herdr(News),
 }
 
-/// Whether the agent goes on after an input.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Next {
     GoOn,
     Exit,
 }
 
-/// Runs the agent that Claude Code's `args` launch, until it exits.
-///
-/// # Panics
-/// Panics when its environment lacks what it needs.
 pub(crate) fn run(app: &App, args: &[String]) {
     let pane = std::env::var("HERDR_PANE_ID").ok();
     let terminal = std::env::var("HC_TERMINAL_ID").ok();
@@ -67,7 +53,6 @@ pub(crate) fn run(app: &App, args: &[String]) {
         sender.clone(),
     )
     .expect("the test listens on its event socket");
-    // Follows Herdr before it shows anything, so that it misses nothing Herdr says of it.
     if let (Some(pane), Some(socket)) = (&pane, std::env::var_os("HERDR_SOCKET_PATH")) {
         herdr::follow(Path::new(&socket), pane, Input::Herdr, sender.clone())
             .expect("Herdr's socket");
@@ -94,28 +79,22 @@ pub(crate) fn run(app: &App, args: &[String]) {
     drop(raw_mode);
 }
 
-/// A running fake agent.
 struct Agent<'a> {
     app: &'a App,
     plays: Plays,
     connection: Connection,
     hooks: Hooks,
-    /// The Herdr 0.9 of its pane; none on herdr-app or in a plain terminal.
     herdr: Option<Herdr>,
-    /// Whether it reports its state to Herdr itself.
     reports_state: bool,
     directory: Directory,
     transcript: Transcript,
-    /// Its session, and how it started.
     session: Option<String>,
     start: Start,
     screen: Screen,
     turns: Turns,
     /// Whether its last stop was blocked: Claude Code then says so in the next one.
     blocked: bool,
-    /// The kinds of its background work that runs, which its stops list.
     background: Vec<String>,
-    /// Whether it writes a Markdown link as a terminal link, as its launch has Claude Code do.
     hyperlinks: bool,
 }
 
@@ -161,8 +140,6 @@ impl<'a> Agent<'a> {
         }
     }
 
-    /// Its start: it shows itself idle, reports its state if it does, starts its session, and
-    /// tells the test.
     fn starts(&mut self, args: &[String]) {
         self.screen
             .log(format!("fake {} {}", self.plays.name(), args.join(" ")));
@@ -192,7 +169,6 @@ impl<'a> Agent<'a> {
         Some(self.transcript.path(self.session.as_deref()?))
     }
 
-    /// Runs the hook of `event` with its own `fields`: what it printed.
     fn hook(&self, event: &str, fields: &serde_json::Value) -> Printed {
         self.hooks.run(
             self.session.as_deref(),
@@ -202,8 +178,6 @@ impl<'a> Agent<'a> {
         )
     }
 
-    /// The session `session` starts, from `start`: its `SessionStart` hooks run, the app's,
-    /// then Herdr's integration's, which reports it to Herdr, and it tells the test.
     fn session_starts(&mut self, session: String, start: Start) {
         self.transcript.start(&session);
         self.session = Some(session.clone());
@@ -217,7 +191,6 @@ impl<'a> Agent<'a> {
         });
     }
 
-    /// Reports its session to Herdr 0.9, as Claude's Herdr integration does.
     fn report_session(&self) {
         let (Some(herdr), Some(session), Some(transcript)) =
             (&self.herdr, &self.session, self.transcript_path())
@@ -244,18 +217,13 @@ impl<'a> Agent<'a> {
         }
     }
 
-    /// Ends the turn under way while it is due to end by itself.
     fn settle(&mut self) {
         while self.turns.due() {
             self.end_turn();
         }
     }
 
-    /// The keys of one read: it edits its input line with them and shows it before each Enter
-    /// and Ctrl-D and at the end, rather than per key. Each Enter submits it, and its turns
-    /// settle after.
     fn keys(&mut self, keys: Vec<Key>) -> Next {
-        // The input line, once a key edited it, until it shows.
         let mut edited: Option<String> = None;
         for key in keys {
             if !matches!(key, Key::Enter | Key::Exit) {
@@ -283,7 +251,6 @@ impl<'a> Agent<'a> {
         Next::GoOn
     }
 
-    /// Its input line holds `typed` from now on, which it reports while it suggests a prompt.
     fn show_typed(&mut self, typed: String) {
         self.screen.set_typed(typed);
         if self.screen.suggests() {
@@ -293,7 +260,6 @@ impl<'a> Agent<'a> {
         }
     }
 
-    /// What was typed is submitted: Claude Code's own commands, a marker, or a prompt.
     fn submit(&mut self, text: &str) -> Next {
         if let Some(id) = marker_of(text) {
             self.report(&Event::Marker { id });
@@ -335,8 +301,6 @@ impl<'a> Agent<'a> {
             self.transcript
                 .prompt(session, text, self.turns.under_way());
         }
-        // Read before it reports the prompt, so that a test that waits for that report and
-        // then stops the swallowing finds the prompt swallowed.
         let swallowed = self.directory.swallow().exists();
         self.screen.log(format!("prompt: {text}"));
         self.report(&Event::PromptReceived {
@@ -415,11 +379,7 @@ impl<'a> Agent<'a> {
         self.screen.idle();
     }
 
-    /// Claude Code's `/resume <session>`: it goes on in `session`, whose `SessionStart` runs
-    /// unless the test keeps it unheard ([`Directory::unreported_resume`]).
     fn resume(&mut self, session: &str) {
-        // The switch is read before the report: a test that sets the next resume's switch once
-        // it sees this one's must not reach this one.
         let unreported = self.directory.unreported_resume();
         let switch = std::fs::read_to_string(&unreported);
         if switch.is_ok() {
@@ -446,8 +406,6 @@ impl<'a> Agent<'a> {
         self.session.as_deref().unwrap_or_default()
     }
 
-    /// The session ends, by `/exit` or Ctrl-D in its pane or by the test's command, and the
-    /// agent exits.
     fn exit(&mut self) -> Next {
         self.hook("SessionEnd", &json!({"reason": "prompt_input_exit"}));
         self.screen.exits();
@@ -470,14 +428,12 @@ impl<'a> Agent<'a> {
         Next::GoOn
     }
 
-    /// Does what `command` says, then answers it.
     fn obey(&mut self, command: Command) -> Next {
         let next = if self.obey_turn(&command) || self.obey_display(&command) {
             Next::GoOn
         } else {
             self.obey_session(&command)
         };
-        // A turn the command lets end ends before the answer.
         if next == Next::GoOn {
             self.settle();
         }
@@ -485,7 +441,6 @@ impl<'a> Agent<'a> {
         next
     }
 
-    /// Obeys `command` if it is about its turns: whether it was.
     fn obey_turn(&mut self, command: &Command) -> bool {
         match command {
             Command::EndTurn => self.end_turn(),
@@ -522,7 +477,6 @@ impl<'a> Agent<'a> {
         true
     }
 
-    /// Obeys `command` if it is about what it shows: whether it was.
     fn obey_display(&mut self, command: &Command) -> bool {
         match command {
             Command::Say { text } => self.screen.log(reply::render(text, self.hyperlinks)),
@@ -536,7 +490,6 @@ impl<'a> Agent<'a> {
         true
     }
 
-    /// Obeys `command`, about its session.
     fn obey_session(&mut self, command: &Command) -> Next {
         match command {
             Command::ReportSession => {
@@ -556,14 +509,12 @@ impl<'a> Agent<'a> {
     }
 }
 
-/// Whether `typed` is Claude Code's `command`, alone or with text after a space.
 fn is_command(typed: &str, command: &str) -> bool {
     typed
         .strip_prefix(command)
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
 }
 
-/// Edits the input line `typed` with `key`, which neither submits it nor exits.
 fn edit(typed: &mut String, key: Key) {
     match key {
         Key::Char(c) => typed.push(c),
@@ -575,10 +526,6 @@ fn edit(typed: &mut String, key: Key) {
     }
 }
 
-/// The `herdr` the agent reports to Herdr with.
-///
-/// # Panics
-/// Panics when its environment names none: the user's, on `PATH`, is never the one.
 fn herdr_cli() -> PathBuf {
     std::env::var_os(variables::HERDR)
         .or_else(|| std::env::var_os("HERDR_BIN_PATH"))

@@ -1,10 +1,3 @@
-//! Listens for fake agents at the socket its first argument names, prints each event they
-//! report, and sends each line of its standard input, a JSON command, to the fake agent its
-//! second argument names, such as its pane: a test's end of the socket, for a person or an
-//! agent to drive a fake agent by hand.
-//!
-//! `cargo run -p fake-agent --example listen -- <socket> <agent name>`
-
 use std::io::BufRead;
 use std::path::Path;
 

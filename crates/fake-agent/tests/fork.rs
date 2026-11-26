@@ -1,13 +1,9 @@
-//! The fork the fake agent plays when Claude Code runs in print mode.
-
 use std::fs;
 use std::io::Write;
 use std::process::{Command as Process, Stdio};
 
 use fake_agent::{Command, Directory, Event, Events, Role, variables};
 
-/// A fork started as Claude Code's `ARGUMENTS` say, on the prompt "Take the turn of keep.",
-/// from the session `parent`, with its events, its directory and its Claude Code configuration.
 struct StartedFork {
     process: std::process::Child,
     events: Events,
@@ -61,7 +57,6 @@ fn start_fork() -> StartedFork {
     }
 }
 
-/// The lines of Claude Code's stream that a fork printed.
 fn stream(output: &std::process::Output) -> Vec<serde_json::Value> {
     String::from_utf8(output.stdout.clone())
         .unwrap()
@@ -121,7 +116,6 @@ fn a_fork_copies_its_parent_s_session_and_its_output_answers_its_tool_call() {
             .any(|name| name == "CLAUDE_CONFIG_DIR"),
         "the names of its environment's variables"
     );
-    // Claude Code's stream: the call, its result, then the end of the turn.
     let stream = stream(&output);
     let call = stream
         .iter()
@@ -140,7 +134,6 @@ fn a_fork_told_to_crash_exits_with_a_failure_and_no_result() {
         process: fork,
         events,
         role,
-        // Kept to the end: the fork's files are under it.
         _directory,
         ..
     } = start_fork();

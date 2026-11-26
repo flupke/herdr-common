@@ -1,9 +1,3 @@
-//! The fake agent in its pane, as the apps' tests drive it: its standard input stands for the
-//! keys typed in its pane, a file for its screen, a script for the app's hooks, and, in Herdr
-//! 0.9 (`HERDR_PANE_ID`), a socket the test listens on for Herdr's. Under herdr-app
-//! (`HC_TERMINAL_ID`), the test reads the states it reports in OSC 7501, and its titles, off its
-//! screen.
-
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
@@ -12,8 +6,6 @@ use std::process::{Child, ChildStdin, Command as Process, Stdio};
 
 use fake_agent::{Command, Event, Events, Reported, Role, variables};
 
-/// The hook: it logs each payload, a line each, and prints the answer the test left for its
-/// event, once, or fails when the test said so.
 const HOOK: &str = r#"#!/bin/sh
 payload=$(cat)
 printf '%s\n' "$payload" >> "$(dirname "$0")/hooks.log"
@@ -23,14 +15,12 @@ if [ -f "$(dirname "$0")/$event.fails" ]; then echo "hook broken" >&2; exit 1; f
 if [ -f "$answer" ]; then cat "$answer"; rm "$answer"; fi
 "#;
 
-/// The Herdr CLI: it logs its arguments, a line each call.
 const HERDR: &str = r#"#!/bin/sh
 printf '%s\n' "$*" >> "$(dirname "$0")/herdr.log"
 "#;
 
 const SESSION: &str = "0f6c3a52-1d2e-4c1b-9a77-3c2f5e8d9b10";
 
-/// A fake agent started in a test's directory.
 struct Started {
     process: Child,
     keys: ChildStdin,
@@ -40,8 +30,6 @@ struct Started {
 }
 
 impl Started {
-    /// Starts the fake agent with `args`, in a pane whose environment is `pane`: its screen
-    /// goes to `screen` in the directory.
     fn new(args: &[&str], pane: &[(&str, &Path)]) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let socket = directory.path().join("events.sock");
@@ -91,12 +79,10 @@ impl Started {
         self.directory.path().join(name)
     }
 
-    /// Types `keys` in the pane.
     fn types(&mut self, keys: &str) {
         self.keys.write_all(keys.as_bytes()).unwrap();
     }
 
-    /// The next event of the fake agent that `matches`.
     fn wait_for(&self, what: &str, matches: impl Fn(&Event) -> bool) -> Event {
         self.events
             .wait_for(what, |reported| {
@@ -105,7 +91,6 @@ impl Started {
             .event
     }
 
-    /// The fake agent's events up to its answer to `command`, but its answer.
     fn obey(&self, command: &Command) -> Vec<Event> {
         let mut events: Vec<Event> = self
             .events
@@ -118,7 +103,6 @@ impl Started {
         events
     }
 
-    /// The payloads of the hooks it ran.
     fn hooks(&self) -> Vec<serde_json::Value> {
         lines(&self.path("hooks.log"))
             .iter()
@@ -126,7 +110,6 @@ impl Started {
             .collect()
     }
 
-    /// The hook of `event` answers `answer`, once.
     fn answers(&self, event: &str, answer: &serde_json::Value) {
         std::fs::write(self.path(&format!("{event}.answer")), answer.to_string()).unwrap();
     }
@@ -157,7 +140,6 @@ fn lines(path: &Path) -> Vec<String> {
         .collect()
 }
 
-/// What `payloads` say of each hook: its event, then the field that tells it apart.
 fn summary(payloads: &[serde_json::Value]) -> Vec<String> {
     payloads
         .iter()
@@ -194,7 +176,6 @@ fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
         &serde_json::json!({"decision": "block", "reason": "Go on."}),
     );
     let blocked = agent.obey(&Command::EndTurn);
-    // A prompt typed while it works joins its turn.
     agent.types("And this.\r");
     agent.wait_for("the prompt typed", |event| {
         matches!(event, Event::PromptReceived { .. })
@@ -241,7 +222,6 @@ fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
     assert_eq!(transcript[0]["origin"]["kind"], "human");
     assert_eq!(transcript[2]["attachment"]["type"], "queued_command");
     assert_eq!(transcript[2]["attachment"]["prompt"], "And this.");
-    // herdr-app's core hears each state in OSC 7501.
     let screen = std::fs::read_to_string(agent.path("screen")).unwrap();
     assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
 }
@@ -262,7 +242,6 @@ fn a_prompt_its_hook_blocks_goes_back_in_its_input_line_and_starts_no_turn() {
     let blocked = agent.wait_for("the prompt blocked", |event| {
         matches!(event, Event::PromptBlocked { .. })
     });
-    // Enter again submits what the input line holds.
     agent.types("\r");
     let received = agent.events.events_until("the prompt", |reported| {
         matches!(reported.event, Event::TurnStarted)
@@ -337,7 +316,6 @@ fn claude_code_s_own_commands_start_sessions_and_run_no_prompt_hook() {
     assert_ne!(cleared, SESSION);
     assert_ne!(forked, cleared);
     assert_eq!(hooks[4]["session_id"], SESSION);
-    // Under herdr-app, where it reports no session to Herdr, it tells the test of each start.
     assert_eq!(
         session_starts(&agent),
         [
@@ -389,7 +367,6 @@ fn a_typed_compact_goes_on_in_its_session_and_runs_no_prompt() {
     });
     agent.answers("SessionStart", &context("Summary two."));
     agent.types("/compact Keep the plan.\r");
-    // The marker, typed after the second compaction, comes once it is done.
     compacting.extend(agent.events.mark(|marker| agent_types(&agent, marker)));
     agent.types("\u{4}");
     agent.wait_for("its exit", |event| *event == Event::Exited);
@@ -436,7 +413,6 @@ fn a_typed_compact_goes_on_in_its_session_and_runs_no_prompt() {
     );
 }
 
-/// Each session start `agent` reported, with how it started.
 fn session_starts(agent: &Started) -> Vec<(String, String)> {
     agent
         .events
@@ -451,21 +427,16 @@ fn session_starts(agent: &Started) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Types `text` in the pane of `agent`, then Enter.
 fn agent_types(agent: &Started, text: &str) {
     let mut keys = &agent.keys;
     keys.write_all(format!("{text}\r").as_bytes()).unwrap();
 }
 
-/// A Herdr 0.9 that the test plays on its socket: it takes the agent's subscription and its
-/// question, then sends what the test says.
 struct FakeHerdr {
     events: std::os::unix::net::UnixStream,
 }
 
 impl FakeHerdr {
-    /// Answers the subscription and the agent's status of the fake agent that connects to
-    /// `listener`: idle.
     fn accept(listener: &UnixListener) -> Self {
         let (subscription, _) = listener.accept().unwrap();
         let mut request = String::new();
@@ -523,7 +494,6 @@ fn in_herdr_a_turn_ends_by_itself_once_herdr_saw_it() {
     agent.wait_for("the end of its turn", |event| {
         *event == Event::TurnEnded { blocked: None }
     });
-    // Herdr's news of another pane is not the agent's.
     herdr.says(
         "pane_agent_detected",
         &serde_json::json!({"pane_id": "%2", "released": true}),
@@ -533,7 +503,6 @@ fn in_herdr_a_turn_ends_by_itself_once_herdr_saw_it() {
         &serde_json::json!({"pane_id": "%1", "released": true}),
     );
     agent.wait_for("its release", |event| *event == Event::Released);
-    // Held, a turn Herdr saw goes on until the test lets turns end.
     agent.obey(&Command::HoldTurns { hold: true });
     agent.types("Hold on.\r");
     agent.wait_for("its held turn", |event| *event == Event::TurnStarted);
@@ -562,7 +531,6 @@ fn in_herdr_a_turn_ends_by_itself_once_herdr_saw_it() {
         );
     }
     assert_eq!(released, [Event::TurnEnded { blocked: None }]);
-    // Herdr's news comes in order: news of another pane before the agent's own release.
     let release_count = agent
         .events
         .try_received()
@@ -597,8 +565,6 @@ fn in_herdr_a_turn_ends_by_itself_once_herdr_saw_it() {
     );
 }
 
-/// The calls of Herdr's CLI the fake agent made, a session report's sequence number left out
-/// once checked.
 fn herdr_calls(agent: &Started) -> Vec<Vec<String>> {
     lines(&agent.path("herdr.log"))
         .iter()
@@ -716,7 +682,6 @@ fn the_test_s_commands_run_claude_code_s_hooks_and_show_on_its_screen() {
     let typed = agent.wait_for("the line typed", |event| {
         matches!(event, Event::InputLine { .. })
     });
-    // The screen the test gives shows while nothing is typed.
     agent.types("\u{15}");
     agent.wait_for("the line cleared", |event| {
         *event
@@ -792,7 +757,6 @@ fn the_switch_files_swallow_a_prompt_and_keep_a_resume_unheard_or_late() {
     });
     std::fs::write(&unreported, "1").unwrap();
     agent_types(&agent, "/resume late");
-    // The agent reads its keys and the test's commands in the order they reach it.
     agent.wait_for("the late resume's start", |event| {
         *event
             == Event::SessionStarted {
@@ -881,7 +845,6 @@ fn it_shows_itself_working_without_a_turn() {
         titles(&screen),
         ["✳ Claude Code", "⠋ Claude Code", "✳ Claude Code"]
     );
-    // herdr-app's core hears it in OSC 7501.
     assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
 }
 
@@ -889,7 +852,6 @@ fn it_shows_itself_working_without_a_turn() {
 fn a_pasted_prompt_costs_a_few_screens_not_one_per_key() {
     let mut agent = Started::new(&[], &[("HC_TERMINAL_ID", Path::new("t1"))]);
     agent.wait_for("its start", |event| matches!(event, Event::Started { .. }));
-    // 6.4 KB on 100 lines, as herdr-ruminate pastes.
     let prompt = vec!["x".repeat(63); 100].join("\n");
 
     agent.types(&format!("\u{1b}[200~{prompt}\u{1b}[201~\r"));
@@ -903,7 +865,6 @@ fn a_pasted_prompt_costs_a_few_screens_not_one_per_key() {
             text: prompt.clone()
         }
     );
-    // A draw per key writes the line typed so far each time: some 20 MB here.
     let screen = std::fs::metadata(agent.path("screen")).unwrap().len();
     let bound = 32 * prompt.len() as u64;
     assert!(
@@ -912,7 +873,6 @@ fn a_pasted_prompt_costs_a_few_screens_not_one_per_key() {
     );
 }
 
-/// The states `screen` reports to herdr-app's core in OSC 7501, in order.
 fn states(screen: &str) -> Vec<&str> {
     screen
         .split("\x1b]7501;state=")
@@ -921,7 +881,6 @@ fn states(screen: &str) -> Vec<&str> {
         .collect()
 }
 
-/// The titles `screen` shows, in order.
 fn titles(screen: &str) -> Vec<&str> {
     screen
         .split("\x1b]0;")

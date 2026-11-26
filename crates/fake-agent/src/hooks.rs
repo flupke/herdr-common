@@ -1,25 +1,15 @@
-//! The app's Claude Code hooks, as Claude Code runs them: the program [`crate::variables::HOOK`]
-//! names, with [`crate::App::hook_arguments`], the event's payload on its standard input.
-//!
-//! The payloads are written here from Claude Code's format, not taken from the app, which reads
-//! them: the fake agent plays Claude Code, so a reader that drifts from that format fails the
-//! app's tests instead of agreeing with its own copy.
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
-/// The hooks of one fake agent.
 pub(crate) struct Hooks {
-    /// The program that runs them, and its arguments; none runs no hook.
     program: Option<(PathBuf, &'static [&'static str])>,
     cwd: PathBuf,
 }
 
 impl Hooks {
-    /// The hooks `program` runs with `arguments`; none when `program` is none.
     pub(crate) fn new(program: Option<PathBuf>, arguments: &'static [&'static str]) -> Self {
         Self {
             program: program.map(|program| (program, arguments)),
@@ -27,11 +17,6 @@ impl Hooks {
         }
     }
 
-    /// Runs the hook of `event` for `session`, whose transcript is `transcript`, with the
-    /// event's own `fields`, once it ended: what it printed.
-    ///
-    /// # Panics
-    /// Panics when the hook cannot run, or fails.
     pub(crate) fn run(
         &self,
         session: Option<&str>,
@@ -65,7 +50,6 @@ impl Hooks {
             .expect("the hook reads its payload");
         drop(input);
         let output = child.wait_with_output().expect("the hook ends");
-        // An app's hook that fails fails its test, as a Claude Code would show its error.
         assert!(
             output.status.success(),
             "the {event} hook failed ({}): {}",
@@ -76,7 +60,6 @@ impl Hooks {
     }
 }
 
-/// What a hook printed on its standard output.
 pub(crate) struct Printed(String);
 
 impl Printed {

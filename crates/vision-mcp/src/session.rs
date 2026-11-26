@@ -1,6 +1,3 @@
-//! A vision session: an app sandbox, seen through its terminals' screens and its window's
-//! pixels, and driven through its display as its user would drive it.
-
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -15,35 +12,23 @@ use vision_signal::acknowledgement_request;
 use crate::frames::{FrameWatch, Stalled};
 use crate::screen::{changed_rows, numbered};
 
-/// The title of herdr-app's window.
 const WINDOW_TITLE: &str = "Herdr";
 
-/// How long [`Vision::start`] waits for the app's window to fill the display.
 const WINDOW_GUARD: Duration = Duration::from_secs(30);
 
 /// The key that pastes into a terminal of herdr-app (`terminal.paste` in its `keys.json`).
 const TERMINAL_PASTE: &str = "ctrl+shift+v";
 
-/// How long an app that speaks vision-signal may take to acknowledge an input, busy as the
-/// reviewer loading a large repository: a guard that fires only when it never does.
 const ACKNOWLEDGEMENT_GUARD: Duration = Duration::from_secs(30);
 
-/// How long an action on a screen that sends no event waits for the window's pixels to change,
-/// before it returns the screen as it is: an action may change nothing.
 const CHANGE_GUARD: Duration = Duration::from_secs(1);
 
-/// How long such an action then waits for the pixels to stay unchanged for [`QUIET`],
-/// before it returns the screen as it is: an animation never settles.
 const QUIET_GUARD: Duration = Duration::from_secs(2);
 
-/// How long the pixels must stay unchanged to count as settled.
 const QUIET: Duration = Duration::from_millis(250);
 
-/// How often a screen that sends no event is looked at again: the window's pixels, or the text
-/// of a terminal whose program does not speak vision-signal.
 const SCREEN_POLL: Duration = Duration::from_millis(20);
 
-/// An input, as the app's user would give it.
 pub enum Input<'a> {
     /// Keys pressed in order, with their modifiers: `ctrl+shift+t`, `enter`, `a`.
     Keys(&'a [String]),
@@ -68,7 +53,6 @@ pub enum Input<'a> {
     },
 }
 
-/// How the app showed it reacted to an input, or to a change [`Vision::settle`] waited on.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reaction {
@@ -80,7 +64,6 @@ pub enum Reaction {
     Pixels { changed: bool, settled: bool },
 }
 
-/// A terminal's screen.
 #[derive(Clone, Debug, Serialize)]
 pub struct Screen {
     /// The terminal's hc address, such as `t1`.
@@ -104,21 +87,13 @@ impl Screen {
     }
 }
 
-/// The error of a tool that needs the window while a reboot keeps it closed.
 const WINDOW_CLOSED: &str = "the window is closed since a reboot: restart the window first";
 
-/// A running vision session.
 pub struct Vision {
-    /// Dropped before the sandbox: the connection leaves the display before it ends. `None`
-    /// while a reboot keeps the window closed.
     display: Option<Display>,
     sandbox: AppSandbox,
-    /// Dropped after the sandbox, which ends the `hc events` it reads.
     frames: FrameWatch,
-    /// The latest acknowledgement request sent.
     requests: u64,
-    /// The text of the latest screen of each terminal the session returned, by its address:
-    /// behind a lock, so that a read takes `&self`.
     returned: Mutex<HashMap<String, String>>,
 }
 
@@ -137,7 +112,6 @@ impl Vision {
         })
     }
 
-    /// The sandbox, for what an app does there beside the vision tools.
     pub fn sandbox(&self) -> &AppSandbox {
         &self.sandbox
     }
@@ -170,7 +144,6 @@ impl Vision {
         Ok(())
     }
 
-    /// The connection to the window's display, unless a reboot keeps the window closed.
     fn display(&self) -> Result<&Display> {
         self.display.as_ref().context(WINDOW_CLOSED)
     }
@@ -187,7 +160,6 @@ impl Vision {
         Ok(terminal_of_pane(&listed, pane))
     }
 
-    /// `terminal`, or the focused one when `None`.
     fn terminal(&self, terminal: Option<&str>) -> Result<String> {
         match terminal {
             Some(terminal) => Ok(terminal.to_owned()),
@@ -205,8 +177,6 @@ impl Vision {
         Ok(self.returned(screen))
     }
 
-    /// `screen`, which the session returns: its rows that changed since the previous one of
-    /// its terminal.
     fn returned(&self, mut screen: Screen) -> Screen {
         screen.changed_rows = self
             .returned
@@ -217,11 +187,8 @@ impl Vision {
         screen
     }
 
-    /// The screen of `terminal`, or of the focused one, as it is now, which the session may
-    /// not return.
     fn read(&self, terminal: Option<&str>) -> Result<Screen> {
         let terminal = self.terminal(terminal)?;
-        // The marker comes first: the screen read after it holds that frame at least.
         let frame = self
             .frames
             .frames()
@@ -272,9 +239,7 @@ impl Vision {
         Ok((reaction, self.focused_screen()?))
     }
 
-    /// Give `input`, if any, and wait for the app's reaction.
     fn react(&mut self, input: Option<&Input<'_>>) -> Result<(Reaction, Option<Screen>)> {
-        // First: a change the window shows during the focus queries still counts.
         let before = self.display()?.fingerprint()?;
         let speaking = self
             .focused_terminal()?
@@ -301,7 +266,6 @@ impl Vision {
         Ok((reaction, self.focused_screen()?))
     }
 
-    /// The focused terminal's screen, if a terminal has the focus.
     fn focused_screen(&self) -> Result<Option<Screen>> {
         match self.focused_terminal()? {
             Some(terminal) => Ok(Some(self.screen(Some(&terminal))?)),
@@ -325,9 +289,6 @@ impl Vision {
         }
     }
 
-    /// Paste an acknowledgement request after the input, and wait for the frame of `terminal`
-    /// that names it: the app read the input before it. `None` when the program left meanwhile,
-    /// as one the input made quit: its shell may show the request typed at its prompt.
     fn acknowledge(&mut self, terminal: &str) -> Result<Option<Reaction>> {
         self.requests += 1;
         let request = self.requests;
@@ -347,7 +308,6 @@ impl Vision {
         }
     }
 
-    /// Wait for the window's pixels to differ from `before`, then to settle.
     fn pixels(&self, before: u64) -> Result<Reaction> {
         let display = self.display()?;
         let deadline = Instant::now() + CHANGE_GUARD;
@@ -398,8 +358,6 @@ impl Vision {
             }
             match screen.frame {
                 Some(seen) => {
-                    // No frame within the guard: the next look shows the screen and fails. A
-                    // program that left: the next looks poll.
                     match self
                         .frames
                         .frames()
@@ -407,7 +365,6 @@ impl Vision {
                     {
                         Ok(_) | Err(Stalled::Guard(_) | Stalled::Left) => {}
                         Err(stalled) => {
-                            // What it printed as it ended shows with no frame.
                             let last = self.read(Some(&terminal))?;
                             if last.text.contains(text) != absent {
                                 return Ok(self.returned(last));
@@ -446,8 +403,6 @@ impl Vision {
     }
 }
 
-/// Wait for the window's pixels to stay unchanged for [`QUIET`], for at most
-/// [`QUIET_GUARD`]: whether they did.
 fn quiet(display: &Display) -> Result<bool> {
     let deadline = Instant::now() + QUIET_GUARD;
     let mut last = display.fingerprint()?;
@@ -468,7 +423,6 @@ fn quiet(display: &Display) -> Result<bool> {
     }
 }
 
-/// Connect to the display of `sandbox`, once its window fills it.
 fn connect(sandbox: &AppSandbox) -> Result<Display> {
     Display::connect(&sandbox.display_socket()?, WINDOW_TITLE, WINDOW_GUARD).map_err(|error| {
         let log = std::fs::read_to_string(sandbox.directory().join("app.log")).unwrap_or_default();
@@ -476,7 +430,6 @@ fn connect(sandbox: &AppSandbox) -> Result<Display> {
     })
 }
 
-/// The terminal `herdr-app ls` lists in `pane`.
 fn terminal_of_pane(listed: &Value, pane: &str) -> Option<String> {
     listed["spaces"]
         .as_array()?

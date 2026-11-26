@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-# Runs a command, or an interactive shell, in this repository's Nix dev shell, from the main
-# checkout or from a jj workspace. Nix evaluates a copy of flake.nix and flake.lock alone: a
-# jj workspace has no .git, so a plain `nix develop` would copy the whole folder, target/
-# included, into the store. Nix makes the copy itself, in its store, and its
-# garbage collector removes it: the script makes no temporary directory and deletes nothing.
-#
-# Usage: scripts/dev-shell [command [argument...]]
-#        scripts/dev-shell --flake   prints the flake's copy, for .envrc's `use flake`
+# Nix evaluates a copy of flake.nix and flake.lock alone: a jj workspace has no .git, so a plain
+# `nix develop` would copy the whole folder, target/ included, into the store. Nix makes the
+# copy itself, in its store, and its garbage collector removes it: the script makes no temporary
+# directory and deletes nothing.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC2016 # Nix expands the expression, not the shell.

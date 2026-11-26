@@ -1,6 +1,3 @@
-//! The environment of the sandbox's processes, and the user's directories the bubblewrap
-//! environment masks.
-
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -8,35 +5,17 @@ use std::path::{Path, PathBuf};
 /// The core's session (`HC_SESSION`), which names its socket in the private runtime directory.
 const CORE_SESSION: &str = "sandbox";
 
-/// The Wayland socket of the sandbox's Weston, in the private runtime directory. No
-/// `WAYLAND_DISPLAY` names it, and a Wayland client looks for `wayland-0` without one: the app
-/// opens its window on Weston's Xwayland, whose `DISPLAY` the sandbox sets once it runs.
+/// No `WAYLAND_DISPLAY` names this socket, and a Wayland client looks for `wayland-0` without
+/// one: the app opens its window on Weston's Xwayland, whose `DISPLAY` the sandbox sets once it
+/// runs.
 pub(crate) const WAYLAND_SOCKET: &str = "wayland-sandbox";
 
-/// What the environment is made from.
 pub(crate) struct Inputs<'a> {
-    /// The sandbox's directory, as its processes see it.
     pub(crate) root: &'a Path,
-    /// Mesa's software Vulkan driver.
     pub(crate) vulkan_driver: &'a Path,
-    /// The variables the caller adds, over the inherited ones and the sandbox's defaults.
     pub(crate) added: &'a [(OsString, OsString)],
 }
 
-/// The environment of the sandbox's processes, each layer over the one before:
-///
-/// 1. `inherited`, this process's, without what reaches the user's Herdr, herdr-app or
-///    herdr-core (`HERDR_*`, `HC_*`, such as an agent's `HC_TERMINAL_ID` when the caller runs
-///    in a herdr-app terminal), their displays and window manager, their configuration, SSH
-///    agent, session bus or Claude Code session;
-/// 2. the sandbox's defaults: a plain shell and terminal, no sound, no usage report, and
-///    `BROWSER=true`, which opens nothing;
-/// 3. the caller's `added`, without displays: a caller's `BROWSER` wins over the default;
-/// 4. what the isolation stands on, which no caller overrides: private directories (`HOME`,
-///    `TMPDIR`, the XDG directories, `HERDR_APP_HOME`), the core's session, `bin` first on
-///    `PATH`, before the caller's, and Mesa's software Vulkan driver.
-///
-/// The display's `DISPLAY` comes once it runs.
 pub(crate) fn environment(
     inputs: &Inputs,
     inherited: impl IntoIterator<Item = (OsString, OsString)>,
@@ -111,8 +90,6 @@ fn reaches_the_user(name: &OsStr) -> bool {
         )
 }
 
-/// Whether the variable `name` names a display or a window manager, which only the sandbox's
-/// own display may fill.
 fn names_a_display(name: &OsStr) -> bool {
     matches!(
         name.as_encoded_bytes(),

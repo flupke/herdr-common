@@ -1,7 +1,5 @@
 use super::*;
 
-// The titles and requests are a format apps and the vision core share: each test spells it out.
-
 #[test]
 fn a_marker_is_the_title_the_core_reads() {
     let marker = FrameMarker {

@@ -1,7 +1,3 @@
-//! The holder: the process that `start` leaves running, which holds the sandbox and answers
-//! the commands that follow on its socket, each on a thread of its own, until `stop` or until
-//! it has been idle too long.
-
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
@@ -13,30 +9,21 @@ use serde_json::Value;
 
 use crate::protocol::{self, Info, Reply, Request};
 
-/// How long the holder waits for a connection's request: a guard that fires only on a failure.
 const REQUEST_GUARD: Duration = Duration::from_secs(10);
 
-/// What the holder runs.
 pub(crate) struct Settings {
     pub(crate) socket: PathBuf,
     pub(crate) log: PathBuf,
     pub(crate) options: Options,
-    /// How long the holder waits for a request before it stops the sandbox: a sandbox an agent
-    /// forgot keeps drawing on the CPU.
     pub(crate) idle: Duration,
 }
 
-/// The running holder, which its threads share.
 struct Holder {
-    /// The sandbox, until `stop` takes it.
     sandbox: RwLock<Option<AppSandbox>>,
     info: Info,
-    /// When the last request came.
     last: Mutex<Instant>,
 }
 
-/// Start the sandbox, say so on standard output, which `start` reads, then answer requests
-/// until the sandbox stops.
 pub(crate) fn serve(settings: &Settings) -> Result<()> {
     let started = start(settings);
     let reply: Reply = match &started {
@@ -49,7 +36,6 @@ pub(crate) fn serve(settings: &Settings) -> Result<()> {
     watch_idleness(&holder, settings);
     for stream in listener.incoming() {
         let mut stream = stream?;
-        // A client that never writes would hold every other one back.
         stream.set_read_timeout(Some(REQUEST_GUARD))?;
         let request: Request = match protocol::receive(&stream) {
             Ok(request) => request,
@@ -94,7 +80,6 @@ fn start(settings: &Settings) -> Result<(Holder, UnixListener)> {
     Ok((holder, listener))
 }
 
-/// Stop the sandbox once no request came for `settings.idle`, as `stop` would.
 fn watch_idleness(holder: &Arc<Holder>, settings: &Settings) {
     let holder = Arc::clone(holder);
     let socket = settings.socket.clone();
@@ -144,8 +129,6 @@ impl Holder {
         }
     }
 
-    /// Stop the sandbox, once the requests in flight are answered, and list the processes it
-    /// left.
     fn stop(&self) -> Result<Value> {
         let sandbox = self
             .sandbox
@@ -158,8 +141,6 @@ impl Holder {
     }
 }
 
-/// Copy the mod `directory` into the app's `mods`, in place of the copy there, which the app
-/// reloads, and return its path inside the sandbox.
 fn install_mod(sandbox: &AppSandbox, directory: &Path) -> Result<Value> {
     ensure!(
         directory.join("main.js").is_file(),

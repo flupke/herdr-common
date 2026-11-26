@@ -38,7 +38,6 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
             "/run/user/1000/cc-socks/1.sock",
         ),
         ("TMPDIR", "/tmp/nix-shell.1"),
-        // The user's own browser and terminal, which never reach the sandbox.
         ("BROWSER", "firefox"),
         ("TERM", "screen"),
     ]);
@@ -48,7 +47,6 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
         ("DISPLAY", ":1"),
         ("WAYLAND_DISPLAY", "/run/user/1000/wayland-1"),
         ("BROWSER", "/sandbox/browser"),
-        // What the isolation stands on: the sandbox's own wins.
         ("HOME", "/home/user"),
         ("HERDR_APP_HOME", "/home/user/.config/herdr-app"),
         ("HC_SESSION", "default"),
@@ -95,8 +93,6 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
     );
 }
 
-/// A case of `user_directories`: the variables set beside `HOME`, and the directories masked,
-/// in any order.
 type Case<'a> = (&'a [(&'a str, &'a str)], &'a [&'a str]);
 
 #[test]
@@ -136,7 +132,6 @@ fn masks_the_user_s_herdr_and_runtime_directories_and_never_one_that_holds_home(
                 "/home/user/config/herdr",
             ],
         ),
-        // A socket in HOME or above it masks only the configurations and the state.
         (&[("HERDR_SOCKET_PATH", "/home/user/herdr.sock")], &defaults),
         (&[("XDG_RUNTIME_DIR", "relative")], &defaults),
     ];

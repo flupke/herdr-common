@@ -27,8 +27,6 @@
           overlays = [ (import rust-overlay) ];
         };
 
-      # The Herdr release that the tests run, whatever Herdr is installed.
-      # The pin-herdr-tools skill says how to change it.
       herdrVersion = "0.9.5";
       herdrAssets = {
         aarch64-darwin = {
@@ -44,9 +42,6 @@
           hash = "sha256-FNnovItKngEY13wyJm921GHwm0A0LrI3UpYL2J9Zkp0=";
         };
       };
-      # The herdr-app and herdr-core (`hc`) releases that the tests run, whatever is installed:
-      # Linux only, since the sandbox that runs them is bubblewrap.
-      # The pin-herdr-tools skill says how to change them.
       herdrAppVersion = "0.1.13";
       herdrAppAssets = {
         aarch64-linux = "2e5bb05c47cffbad018ad34217ea4c816476d7eb842692f740798c9020f0281e";
@@ -73,7 +68,6 @@
             inherit (herdrAssets.${system}) hash;
           };
           dontUnpack = true;
-          # Keep the release binary byte for byte.
           dontFixup = true;
           installPhase = "install -Dm755 $src $out/bin/herdr";
         };
@@ -123,7 +117,6 @@
         };
     in
     {
-      # The pinned tools, for the apps' flakes to take from here rather than pin their own.
       packages = forSystems systems (
         system:
         {
@@ -135,8 +128,6 @@
         }
       );
 
-      # `nix flake check` runs each pinned tool and fails unless its `--version` prints its name
-      # and pinned version, and nothing else.
       checks = forSystems systems (
         system:
         let
@@ -197,7 +188,6 @@
           default = pkgs.mkShell (
             {
               packages = [
-                # The jj the tests and the gate run, whatever jj the machine has.
                 pkgs.jujutsu
                 pkgs.rust-bin.stable."1.90.0".default
                 pkgs.cargo-nextest
@@ -205,8 +195,6 @@
                 pkgs.typos
                 rustComplexityAnalyzer
               ]
-              # The app sandbox (crates/app-sandbox) runs bubblewrap, enters it with nsenter, and
-              # relays a forward's connections into it with socat.
               ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 pkgs.bubblewrap
                 pkgs.util-linux
@@ -217,14 +205,11 @@
                 pkgs.ffmpeg-full
                 pkgs.xdotool
               ];
-              # Not on PATH: `herdr` there stays the user's own Herdr.
               TEST_HERDR_BIN_PATH = "${herdrFor system}/bin/herdr";
             }
             // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-              # Not on PATH either: `herdr-app` and `hc` there stay the user's.
               TEST_HERDR_APP_BIN_PATH = "${herdrAppFor system}/bin/herdr-app";
               TEST_HC_BIN_PATH = "${hcFor system}/bin/hc";
-              # The private herdr-app's display: a headless Weston, which starts its Xwayland.
               TEST_WESTON_BIN_PATH = "${pkgs.weston}/bin/weston";
               # Mesa's software Vulkan driver: the private herdr-app draws on the CPU, the same on
               # every machine, and never opens the user's GPU.

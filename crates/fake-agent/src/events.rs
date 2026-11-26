@@ -1,12 +1,3 @@
-//! The test's end of the event socket.
-//!
-//! A test listens on a Unix socket with [`Events::listen`] and names it to the fake agents it
-//! starts in [`crate::variables::EVENTS`] ([`Events::environment`]). Each fake agent connects,
-//! says who it is ([`Role`]), then writes one JSON line per [`Event`]; the test sends it
-//! [`Command`]s on the same connection. The test waits on what the fake agents report instead
-//! of polling, and proves that something did not happen by ordering: what a fake agent did
-//! before it reported a later event, it reported before that event ([`Events::mark`]).
-
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -34,11 +25,8 @@ pub const GUARD: Duration = Duration::from_secs(90);
 /// listening.
 pub struct Events {
     path: PathBuf,
-    /// Tells the thread that accepts connections to stop.
     stopped: Arc<AtomicBool>,
-    /// Each event, or why a fake agent's line was not one.
     incoming: Mutex<mpsc::Receiver<Result<Reported, String>>>,
-    /// Every event received, and how many of them [`Self::events_until`] went through.
     received: Mutex<Received>,
     connections: Arc<Connections>,
     markers: AtomicU64,
@@ -50,17 +38,14 @@ struct Received {
     read: usize,
 }
 
-/// The connections of the fake agents, by role, as they connect.
 #[derive(Default)]
 struct Connections {
-    /// The connection of each role, and its number.
     writers: Mutex<BTreeMap<Role, (u64, UnixStream)>>,
     connected: Condvar,
     next: AtomicU64,
 }
 
 impl Events {
-    /// Listens at `path`, under the test's private directory.
     pub fn listen(path: &Path) -> std::io::Result<Self> {
         let listener = UnixListener::bind(path)?;
         let (sender, events) = mpsc::channel();
@@ -171,8 +156,6 @@ impl Events {
         Ok(received.events.clone())
     }
 
-    /// Receives the next event; an error that names `what` the test waited for, when none came
-    /// for `guard`.
     fn receive(&self, what: &str, guard: Duration) -> Result<(), String> {
         let next = self
             .incoming
@@ -257,14 +240,12 @@ impl Events {
 }
 
 impl Drop for Events {
-    /// Stops accepting connections: a connection of its own wakes the thread that accepts them.
     fn drop(&mut self) {
         self.stopped.store(true, Ordering::Release);
         let _ = UnixStream::connect(&self.path);
     }
 }
 
-/// Reads the events of one fake agent into `sender`, then reports that it disconnected.
 fn read_connection(
     stream: &UnixStream,
     sender: &mpsc::Sender<Result<Reported, String>>,
@@ -309,7 +290,6 @@ fn read_connection(
         .writers
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    // A fake agent of the same role that connected since keeps its connection.
     if writers
         .get(&from)
         .is_some_and(|(owner, _)| *owner == number)

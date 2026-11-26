@@ -1,7 +1,6 @@
 //! The frames the sandbox's terminals paint, as herdr-core reports them: an app that speaks
 //! vision-signal ends each painted frame with a [`FrameMarker`] title, which `hc events`
-//! reports once the core has read the frame. Waiting on these events, a session reads a
-//! screen only once the app has reacted.
+//! reports once the core has read the frame.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -14,31 +13,21 @@ use eyre::{ContextCompat, Result, WrapErr};
 use serde_json::Value;
 use vision_signal::FrameMarker;
 
-/// How long [`FrameWatch::start`] waits for the core's first snapshot: a guard that fires only
-/// on a failure.
 const SNAPSHOT_GUARD: Duration = Duration::from_secs(30);
 
-/// What a terminal last reported.
 #[derive(Clone, Copy, Debug, Default)]
 struct Terminal {
-    /// The latest frame marker: `None` before the first frame, and once another title replaced
-    /// it, as an app that quits sets (vision-signal's `FrameMarker::RESET`). hc reports a new
-    /// foreground program after the frames it painted at times, so that is no sign.
+    /// hc reports a new foreground program after the frames it painted at times, so that is no
+    /// sign that the app quit.
     latest: Option<FrameMarker>,
-    /// Whether the terminal's program ended, or the terminal went.
     ended: bool,
 }
 
-/// Why a wait for a frame ended without one.
 #[derive(Debug)]
 pub(crate) enum Stalled {
-    /// The terminal's program ended.
     Ended,
-    /// The program that painted the frames set another title: it quit.
     Left,
-    /// `hc events` stopped.
     Stopped(String),
-    /// No such frame came within the guard; the latest one, if any.
     Guard(Option<FrameMarker>),
 }
 
@@ -63,12 +52,10 @@ impl std::fmt::Display for Stalled {
 #[derive(Default)]
 struct State {
     terminals: HashMap<String, Terminal>,
-    /// Whether the first snapshot came.
     snapshot: bool,
     stopped: Option<String>,
 }
 
-/// The frames of the sandbox's terminals.
 #[derive(Default)]
 pub(crate) struct Frames {
     state: Mutex<State>,
@@ -118,20 +105,15 @@ impl Frames {
         self.changed.notify_all();
     }
 
-    /// `hc events` stopped, so no frame comes any more.
     fn stop(&self, reason: String) {
         self.lock().stopped.get_or_insert(reason);
         self.changed.notify_all();
     }
 
-    /// The latest frame marker of `terminal`: `None` while it never painted one, as for a
-    /// program that does not speak vision-signal.
     pub(crate) fn latest(&self, terminal: &str) -> Option<FrameMarker> {
         self.lock().terminals.get(terminal)?.latest
     }
 
-    /// Wait for a frame of `terminal` that satisfies `until`, the latest one first, for at most
-    /// `guard`. A terminal whose program paints no marker, or no longer, ends the wait.
     pub(crate) fn wait(
         &self,
         terminal: &str,
@@ -166,7 +148,6 @@ impl Frames {
         }
     }
 
-    /// Wait until the first snapshot came, for at most `guard`.
     fn wait_snapshot(&self, guard: Duration) -> Result<()> {
         let state = self
             .changed
@@ -190,7 +171,6 @@ impl Frames {
     }
 }
 
-/// `hc events` in the sandbox, which feeds [`Frames`] until dropped.
 pub(crate) struct FrameWatch {
     frames: Arc<Frames>,
     /// In bubblewrap, the nsenter that started `hc events`: its end leaves `hc events` running
@@ -199,8 +179,6 @@ pub(crate) struct FrameWatch {
 }
 
 impl FrameWatch {
-    /// Follow the events of the core of `sandbox`, and return once its first snapshot came: no
-    /// marker painted since goes unseen.
     pub(crate) fn start(sandbox: &AppSandbox) -> Result<Self> {
         let mut events = sandbox
             .command(&sandbox.programs().hc)

@@ -1,6 +1,3 @@
-//! Restarts of the sandbox's app, as a reboot or a crash restarts it: its core, its window,
-//! or both.
-
 use std::path::Path;
 use std::time::Instant;
 
@@ -10,7 +7,6 @@ use eyre::{Result, WrapErr, ensure};
 /// What herdr-app writes to its log once it reconnected to a new core.
 const RECONNECTED: &str = "reconnected to the core";
 
-/// What [`AppSandbox::restart`] restarts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Restart {
     /// The core: `SIGKILL` to every hc process of the sandbox (the window's `hc connect`, the
@@ -55,7 +51,6 @@ impl AppSandbox {
                 if let Some(mut app) = self.app.take() {
                     app.wait().wrap_err("cannot wait for the window")?;
                 }
-                // A core started apart from the window, such as by a reboot before.
                 self.kill_trees(&self.running(&self.programs.hc))?;
                 self.hc(&["server", "start"])?;
                 Ok(())
@@ -67,8 +62,6 @@ impl AppSandbox {
                 );
                 let opened = self.start_app();
                 if opened.is_err() {
-                    // A window that never showed the layout ends, so that a restart may open
-                    // it again.
                     let _ = self.kill_trees(&self.running(&self.programs.app));
                     if let Some(mut app) = self.app.take() {
                         let _ = app.wait();
@@ -79,13 +72,10 @@ impl AppSandbox {
         }
     }
 
-    /// Whether the app's window runs.
     pub fn window_open(&self) -> bool {
         !self.running(&self.programs.app).is_empty()
     }
 
-    /// `SIGKILL` to each process of `roots` and every process under them
-    /// ([`process::kill_trees`]), and return once they ended.
     fn kill_trees(&self, roots: &[u32]) -> Result<()> {
         let nsenter = match &self.jail {
             Jail::Bubble(bubble) => Some(bubble.nsenter()),
@@ -117,13 +107,11 @@ impl AppSandbox {
         }
     }
 
-    /// What the app wrote to `app.log`.
     fn app_log(&self) -> Result<String> {
         let path = self.directory().join("app.log");
         std::fs::read_to_string(&path).wrap_err_with(|| format!("cannot read {}", path.display()))
     }
 
-    /// The processes of the sandbox that run `program`, by host PID.
     fn running(&self, program: &Path) -> Vec<u32> {
         let Ok(program) = std::fs::canonicalize(program) else {
             return Vec::new();

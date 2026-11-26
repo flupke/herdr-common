@@ -1,15 +1,12 @@
 //! What Claude Code's arguments say about the session it starts, as Claude Code 2.1.318 reads
 //! them.
 
-/// The flag that gives Claude Code its session's ID.
 const SESSION_ID: &str = "--session-id";
-/// The flag that has Claude Code resume a session, by its ID.
 const RESUME: &str = "--resume";
 /// The flag that has Claude Code go on from the resumed session's conversation in a new
 /// session: the one `--session-id` names, or a new one.
 const FORK_SESSION: &str = "--fork-session";
 
-/// How a session started, as `SessionStart` says it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Start {
     Startup,
@@ -32,10 +29,6 @@ impl Start {
     }
 }
 
-/// The session Claude Code launched with `args` starts, and how: a resume with
-/// `--fork-session` starts as a fork, in the session `--session-id` names. When `args` name no
-/// session, `variable` ([`crate::variables::SESSION`]) does: none when it is empty, a new one
-/// when it is unset.
 pub(crate) fn session(args: &[String], variable: Option<String>) -> (Option<String>, Start) {
     let resumed = flag_value(args, RESUME);
     let forked = args.iter().any(|arg| arg == FORK_SESSION);
@@ -55,7 +48,6 @@ pub(crate) fn session(args: &[String], variable: Option<String>) -> (Option<Stri
     (session, start)
 }
 
-/// The value Claude Code was given with `flag`, as `--flag <value>` or `--flag=<value>`.
 pub(crate) fn flag_value(args: &[String], flag: &str) -> Option<String> {
     args.iter().enumerate().find_map(|(at, arg)| {
         if arg == flag {

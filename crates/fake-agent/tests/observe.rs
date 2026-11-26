@@ -1,13 +1,8 @@
-//! The hook that a real Claude Code runs to report what it does as the fake agent reports it.
-
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use fake_agent::{Event, Events, Role, variables};
 
-/// What the hook that `hooks` names for Claude Code's event `event` reports, run as Claude Code
-/// runs a command hook: through the shell, with the event on its standard input, here under a
-/// shell whose command line is `shell_arguments`.
 fn run_hook(
     hooks: &serde_json::Value,
     events: &Events,
@@ -105,7 +100,6 @@ fn a_real_agent_s_hooks_report_its_prompts_and_resumes_as_the_fake_agent_does() 
         [],
         "a subagent's session is not the agent's"
     );
-    // A fork runs the agent's hooks too, under the fork's command line.
     let fork_command_line = ["claude", "-p", "--resume", "own", "--fork-session"];
     for event in [
         serde_json::json!({"hook_event_name": "SessionStart", "session_id": "fork",

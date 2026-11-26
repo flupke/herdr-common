@@ -1,19 +1,16 @@
 .PHONY: check complexity fmt lint test
 
-# The checks come in levels, cheapest first; AGENTS.md says when to run which.
-# They all build with the same flags, so they share one build cache.
+# These targets build with the same flags, so they share one build cache.
 lint test check: export RUSTFLAGS = -Dwarnings
 
-# Level 1: lints of every target, the complexity gate, and spelling. typos skips hidden folders
-# unless named: name a new hidden folder of text here. A right word it flags goes in
-# _typos.toml, under [default.extend-words].
+# typos skips hidden folders unless named: name a new hidden folder of text here. A right word
+# it flags goes in _typos.toml, under [default.extend-words].
 lint: complexity
 	cargo clippy --workspace --all-targets
 	typos . .agents
 
-# Level 2, with CRATES: the unit tests of those crates (`make test CRATES="app-sandbox"`).
-# Level 3, without: every unit test of the workspace, doc tests included. nextest runs no doc
-# test, so only level 3 runs them, and it fails a run that finds no test unless --no-tests=pass.
+# nextest runs no doc test, so a run without CRATES runs them with cargo test, and nextest fails
+# a run that finds no test unless --no-tests=pass.
 # A pane of the user's Herdr sets the HERDR_* variables, one of the user's herdr-app the HC_*
 # ones: the tests run without them, so none reaches the user's Herdr or herdr-app.
 CRATES ?=
@@ -28,11 +25,9 @@ else
 	$(NO_LIVE_HERDR) cargo nextest run --no-tests=pass $(foreach crate,$(CRATES),-p $(crate))
 endif
 
-# Formats the code, once a change is complete. No check fails on formatting.
 fmt:
 	cargo fmt --all
 
-# Every level in one run: the gate of a change (AGENTS.md, step 5).
 check: lint
 	$(MAKE) test CRATES=
 

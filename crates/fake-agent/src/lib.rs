@@ -38,8 +38,6 @@ use std::path::{Path, PathBuf};
 pub use events::{Events, GUARD};
 pub use protocol::{Command, Event, Reported, Role};
 
-/// What one app's fake agent does its own way. What changes from one test to the next goes in
-/// [`variables`] instead.
 #[derive(Clone, Copy, Debug)]
 pub struct App {
     /// The arguments of the program [`variables::HOOK`] names that run the app's Claude Code
@@ -53,7 +51,6 @@ pub struct App {
 }
 
 impl Default for App {
-    /// No hook arguments, and a prompt read as it is.
     fn default() -> Self {
         Self {
             hook_arguments: &[],
@@ -96,7 +93,6 @@ pub mod variables {
 /// it (`herdr pane release-agent --source`).
 pub const STATE_SOURCE: &str = "fake-agent";
 
-/// The program's first argument when a real Claude Code's hook runs it ([`observing_hooks`]).
 const OBSERVE: &str = "observe";
 
 /// Runs the fake agent as Claude Code launched with `args`: the agent in its pane, until it
@@ -115,8 +111,6 @@ pub fn run(app: &App, args: &[String]) {
     }
 }
 
-/// The agent's name on the event socket: [`variables::NAME`], else its Herdr pane, else its
-/// herdr-app terminal, else `agent`.
 fn agent_name() -> String {
     std::env::var(variables::NAME)
         .or_else(|_| std::env::var("HERDR_PANE_ID"))
@@ -149,10 +143,6 @@ impl Directory {
         Self(path)
     }
 
-    /// The directory [`variables::DIRECTORY`] names, or else the event socket's.
-    ///
-    /// # Panics
-    /// Panics when the environment names neither.
     pub(crate) fn from_env() -> Self {
         let path = std::env::var_os(variables::DIRECTORY)
             .map(PathBuf::from)

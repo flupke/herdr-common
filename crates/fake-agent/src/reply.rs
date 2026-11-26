@@ -24,7 +24,6 @@ pub(crate) fn hyperlinks(args: &[String]) -> bool {
         .is_some_and(|value| !value.is_empty() && value != "0")
 }
 
-/// `text` as Claude Code draws it, its `[label](target)` links as `hyperlinks` says.
 pub(crate) fn render(text: &str, hyperlinks: bool) -> String {
     let mut drawn = String::new();
     let mut rest = text;
@@ -44,11 +43,8 @@ pub(crate) fn render(text: &str, hyperlinks: bool) -> String {
     drawn
 }
 
-/// The first Markdown link of `text`: what comes before it, its label, its target, and what
-/// comes after it.
 fn next_link(text: &str) -> Option<(&str, &str, &str, &str)> {
     let middle = text.find("](")?;
-    // The label's own `[`: a `[` before it opens no link.
     let open = text[..middle].rfind('[')?;
     let close = middle + text[middle..].find(')')?;
     Some((

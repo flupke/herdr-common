@@ -1,12 +1,5 @@
-//! A terminal's screen as the tools return it: each row after its zero-based number, without
-//! the spaces and box sides that end it, and each run of rows left empty folded into one line
-//! that names them. A row keeps its columns, so a cell still counts from the start of its row,
-//! after `row: `. Beside it, the rows whose text differs from an earlier read of the screen.
-
-/// The characters that draw the vertical side of a box.
 const SIDES: &[char] = &['│', '┃', '║'];
 
-/// `text`, the screen's rows one per line, as the tools return it.
 pub(crate) fn numbered(text: &str) -> String {
     let mut lines = Vec::new();
     let mut empty: Option<(usize, usize)> = None;
@@ -23,8 +16,6 @@ pub(crate) fn numbered(text: &str) -> String {
     lines.join("\n")
 }
 
-/// The rows of `after` whose text, as the tools return it, differs from the same row of
-/// `before`: a row past the end of either counts as empty.
 pub(crate) fn changed_rows(before: &str, after: &str) -> Vec<usize> {
     let before: Vec<&str> = before.lines().map(shown).collect();
     let after: Vec<&str> = after.lines().map(shown).collect();
@@ -33,7 +24,6 @@ pub(crate) fn changed_rows(before: &str, after: &str) -> Vec<usize> {
         .collect()
 }
 
-/// `line` without the spaces and box sides that end it.
 fn shown(line: &str) -> &str {
     line.trim_end_matches(|character: char| character.is_whitespace() || SIDES.contains(&character))
 }

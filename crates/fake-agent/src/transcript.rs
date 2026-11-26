@@ -1,15 +1,8 @@
-//! The transcript of the fake agent's session, a file of JSON lines, as Claude Code keeps one
-//! per session.
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
-/// Appends `entry` to the transcript at `path`.
-///
-/// # Panics
-/// Panics when the transcript cannot be written.
 pub(crate) fn append(path: &Path, entry: &Value) {
     if let Some(directory) = path.parent() {
         std::fs::create_dir_all(directory).expect("the transcripts' directory");
@@ -22,8 +15,6 @@ pub(crate) fn append(path: &Path, entry: &Value) {
     writeln!(file, "{entry}").expect("the transcript is written");
 }
 
-/// The transcript of the agent's session under Claude Code's configuration directory, and the
-/// count of the prompts it took.
 pub(crate) struct Transcript {
     configuration: PathBuf,
     turns: usize,
@@ -37,16 +28,10 @@ impl Transcript {
         }
     }
 
-    /// The transcript of `session`.
     pub(crate) fn path(&self, session: &str) -> PathBuf {
         crate::transcript(&self.configuration, session)
     }
 
-    /// The session `session` starts: its transcript exists from now on, as a fork of it reads
-    /// it.
-    ///
-    /// # Panics
-    /// Panics when the transcript cannot be written.
     pub(crate) fn start(&self, session: &str) {
         let path = self.path(session);
         if let Some(directory) = path.parent() {
@@ -88,7 +73,6 @@ impl Transcript {
         append(&self.path(session), &entry);
     }
 
-    /// The agent's answer, which ends its turn.
     pub(crate) fn answer(&self, session: &str) {
         append(
             &self.path(session),

@@ -1,7 +1,3 @@
-//! The vision tools, which an app's MCP server takes in beside its own: screen, screenshot,
-//! key, type, click, drag, settle and `wait_for`. Every tool that acts returns once the app
-//! reacted, and every mistake is an error result the agent reads.
-
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -32,10 +28,8 @@ drop the spaces and box sides that end a row, and fold runs of empty rows; chang
 the rows that differ from the previous screen of that terminal a tool returned, and is absent \
 on the first. click and drag take the window's pixels, as screenshot shows them.";
 
-/// The longest a `wait_for` may wait.
 const MAX_WAIT_MS: u64 = 60_000;
 
-/// What `wait_for` waits when no timeout is given.
 const DEFAULT_WAIT_MS: u64 = 5_000;
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -133,7 +127,6 @@ pub struct VisionTools {
     session: Arc<Mutex<Option<Vision>>>,
 }
 
-/// What a tool returns: a summary, a screen's text, an image.
 struct Outcome {
     summary: Value,
     screen: Option<Screen>,
@@ -218,8 +211,6 @@ impl VisionTools {
         router
     }
 
-    /// Run `action` on the session off the async runtime, and turn an error into an error
-    /// result.
     async fn run(
         &self,
         action: impl FnOnce(&mut Vision) -> Result<Outcome> + Send + 'static,

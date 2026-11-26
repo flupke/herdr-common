@@ -8,7 +8,6 @@ publish = false
 description = "The vision MCP core: an agent's eyes and hands on an app in the app sandbox (screen, screenshot, key, type, click, drag, settle, wait_for), which an app's own MCP server takes in with its own tools."
 
 [[bin]]
-# The probe, the small program the integration tests drive: it speaks vision-signal.
 name = "vision-probe"
 path = "src/bin/vision-probe.rs"
 test = false

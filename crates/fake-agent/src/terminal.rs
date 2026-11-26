@@ -1,30 +1,21 @@
-//! The fake agent's terminal: the keys typed in its pane, read as a terminal agent's composer
-//! reads them, and the mode it reads them in.
-
 use std::io::Read;
 
 use rustix::termios::{self, InputModes, LocalModes, OptionalActions, Termios};
 
-/// A key typed in the pane, as the input line takes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Key {
     Char(char),
     Backspace,
     Enter,
-    /// Ctrl-U or Ctrl-C: the input line empties.
     Clear,
-    /// Ctrl-D: the agent exits.
     Exit,
 }
 
-/// Where the reader is in what the terminal sends.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum Escape {
     #[default]
     None,
-    /// After `ESC`.
     Started,
-    /// In a control sequence, after `ESC [`, with its parameters so far.
     Csi(String),
 }
 
@@ -36,12 +27,10 @@ enum Escape {
 struct Keys {
     escape: Escape,
     pasting: bool,
-    /// The last character was a carriage return: a line feed after it ends the same line.
     after_return: bool,
 }
 
 impl Keys {
-    /// The key `c` is, read next, if any.
     fn key(&mut self, c: char) -> Option<Key> {
         let after_return = std::mem::replace(&mut self.after_return, c == '\r');
         match std::mem::take(&mut self.escape) {
@@ -85,9 +74,6 @@ impl Keys {
     }
 }
 
-/// Reads the keys typed in the pane, on standard input, and hands those of each read to `send`
-/// together, so that the agent draws once per read rather than once per key, until the input
-/// ends or `send` returns false.
 pub(crate) fn read_keys(mut send: impl FnMut(Vec<Key>) -> bool) {
     let mut stdin = std::io::stdin().lock();
     // Up to a pipe's capacity: a test's pipe hands a paste over in one read, a pty in reads of
@@ -103,7 +89,6 @@ pub(crate) fn read_keys(mut send: impl FnMut(Vec<Key>) -> bool) {
         pending.extend_from_slice(&bytes[..read]);
         let valid = match std::str::from_utf8(&pending) {
             Ok(text) => text.len(),
-            // A character cut at the read's end waits for the rest.
             Err(error) if error.error_len().is_none() => error.valid_up_to(),
             Err(_) => {
                 pending.clear();
@@ -119,9 +104,6 @@ pub(crate) fn read_keys(mut send: impl FnMut(Vec<Key>) -> bool) {
     }
 }
 
-/// The pane's terminal in the mode a terminal agent reads keys in: no echo, each key as it
-/// comes, Ctrl-C and Ctrl-D as keys, and bracketed paste; its own mode again once dropped. On
-/// standard input that is no terminal, as in a test, it changes nothing.
 pub(crate) struct RawMode(Option<Termios>);
 
 impl RawMode {
@@ -143,7 +125,6 @@ impl RawMode {
 impl Drop for RawMode {
     fn drop(&mut self) {
         if let Some(saved) = &self.0 {
-            // The shell's prompt goes on a line of its own.
             crate::screen::write("\x1b[?2004l\r\n");
             let _ = termios::tcsetattr(std::io::stdin(), OptionalActions::Now, saved);
         }

@@ -1,22 +1,11 @@
-//! The probe the vision core's integration tests drive: a full-screen terminal program that
-//! speaks vision-signal and shows what it read. Run it in a raw terminal (`stty raw -echo`).
-//!
-//! It shows the keys typed, the last text pasted, the last click or drag (`dragging` while the
-//! button is down), where the last drag dropped, and work started by Enter, which shows
-//! `working on <typed>`, then `done: <typed>` half a second later. It paints its reaction to an
-//! input a moment after reading it, as a busy app does: a core that reads the screen before the
-//! frame that acknowledges its input sees the screen from before.
-
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use vision_signal::{FrameMarker, parse_acknowledgement_request};
 
-/// How long the work Enter starts takes.
 const WORK: Duration = Duration::from_millis(500);
 
-/// How long the app takes to paint its reaction to an input.
 const REACTION: Duration = Duration::from_millis(200);
 
 const PASTE_START: &[u8] = b"\x1b[200~";
@@ -29,7 +18,6 @@ struct State {
     mouse: String,
     dropped: String,
     work: String,
-    /// Where the left button went down, and whether it moved since.
     pressed: Option<((u32, u32), bool)>,
     marker: FrameMarker,
 }
@@ -65,7 +53,6 @@ fn main() {
     }
 }
 
-/// Act on the complete inputs at the start of `input`, and say how many bytes they took.
 fn handle(state: &Arc<Mutex<State>>, input: &[u8]) -> usize {
     let mut at = 0;
     while at < input.len() {
@@ -158,7 +145,6 @@ fn mouse(state: &mut State, report: &[u8], released: bool) {
     }
 }
 
-/// Paint the whole screen, then the frame's marker.
 fn paint(state: &Mutex<State>) {
     let mut state = lock(state);
     state.marker.frame += 1;

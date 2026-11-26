@@ -3,14 +3,6 @@
 //! their own `HERDR_APP_HOME`, `HC_SESSION` and XDG directories, drawn by Mesa's software
 //! Vulkan on a headless Weston, whose Xwayland is the app's only display. Its processes get
 //! none of the variables that name the user's displays, window manager, Herdr or herdr-app.
-//!
-//! [`Isolation`] says how far it goes: in bubblewrap by default, where the user's directories
-//! and runtime directory show empty and the kernel cleans up after it, or plain, where
-//! bubblewrap cannot run.
-//!
-//! A [`Bubble`] is that bubblewrap environment alone, with no display nor herdr-app, for a
-//! caller that runs programs of its own in it, such as a Herdr server, with the
-//! [`user_directories`] masked.
 
 mod bubble;
 mod environment;
@@ -43,8 +35,6 @@ pub const APP_HOME: &str = "config/herdr-app";
 /// What Weston writes once its Xwayland listens, followed by the display's name (`:0`).
 const DISPLAY_READY: &str = "xserver listening on display ";
 
-/// How long the sandbox waits for its display, its app or the end of what a restart killed
-/// before it fails: a guard that fires only on a failure.
 const GUARD: Duration = Duration::from_secs(60);
 
 /// How often the sandbox asks the app whether its window shows the core's layout, as it starts
@@ -61,10 +51,9 @@ const LAYOUT_PROBE: [&str; 3] = [
     r#"{"id": "sp00000000000000000000000000000000", "name": "layout probe"}"#,
 ];
 
-/// The programs a sandbox runs. [`Programs::pinned`] gives the dev shell's pinned releases,
-/// which tests run; a caller may run another herdr-app, such as its own build. Each path is
-/// absolute, and in bubblewrap outside `/tmp` and the user's masked directories, which the
-/// sandbox's processes see empty.
+/// A caller may run another herdr-app, such as its own build. Each path is absolute, and in
+/// bubblewrap outside `/tmp` and the user's masked directories, which the sandbox's processes
+/// see empty.
 #[derive(Clone, Debug)]
 pub struct Programs {
     /// herdr-app (`TEST_HERDR_APP_BIN_PATH`).
@@ -96,7 +85,6 @@ impl Programs {
     }
 }
 
-/// How a sandbox keeps its processes from the user's.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Isolation {
     /// A bubblewrap environment, with PID, network and mount namespaces of its own: the user's
@@ -121,7 +109,6 @@ pub enum Isolation {
     Plain,
 }
 
-/// What a sandbox runs, and how.
 #[derive(Clone, Debug)]
 pub struct Options {
     pub isolation: Isolation,
@@ -149,27 +136,20 @@ impl Default for Options {
     }
 }
 
-/// What a stop left behind.
 #[derive(Debug, Default)]
 pub struct Stopped {
     /// The processes of the sandbox still running, by host PID.
     pub processes: Vec<u32>,
 }
 
-/// A running sandbox: its display, and the app on it.
 pub struct AppSandbox {
     jail: Jail,
     programs: Programs,
     environment: Vec<(OsString, OsString)>,
-    /// The display's name, such as `:0`.
     display: String,
-    /// The processes that started Weston and the app: in bubblewrap, the nsenter that started
-    /// each, which ends once it ended.
     weston: Option<Child>,
     app: Option<Child>,
-    /// The number of the next screenshot's file.
     shots: AtomicU32,
-    /// The ports of the sandbox's loopback the host reaches ([`AppSandbox::forward`]).
     forwards: Mutex<Vec<Forward>>,
 }
 
@@ -219,7 +199,6 @@ impl AppSandbox {
         Ok(sandbox)
     }
 
-    /// Create the sandbox's directories and the app's home.
     fn prepare(&self, (width, height): (u16, u16)) -> Result<()> {
         let root = self.directory();
         for name in ["home", "config", "state", "data", "cache", "bin"] {
@@ -230,8 +209,6 @@ impl AppSandbox {
             // Xwayland's sockets, in the tmpfs rather than the host's /tmp.
             create_directory(&root.join(".X11-unix"), 0o1777)?;
         }
-        // The app and its terminals find the pinned hc and herdr-app first on their PATH,
-        // never the user's.
         std::os::unix::fs::symlink(&self.programs.hc, root.join("bin/hc"))?;
         std::os::unix::fs::symlink(&self.programs.app, root.join("bin/herdr-app"))?;
         write_executable(&root.join("bin/xdg-open"), &xdg_open(self.inside()))?;
@@ -270,7 +247,6 @@ impl AppSandbox {
                 format!("--socket={WAYLAND_SOCKET}"),
                 format!("--width={width}"),
                 format!("--height={height}"),
-                // The display never idles, as a person at work keeps theirs awake.
                 "--idle-time=0".to_owned(),
             ])
             .stdin(Stdio::null())
@@ -328,7 +304,6 @@ impl AppSandbox {
         })
     }
 
-    /// Whether the app's window answers, its layout loaded from the core ([`LAYOUT_PROBE`]).
     fn shows_layout(&self) -> bool {
         match self.run_json(&self.programs.app, &LAYOUT_PROBE) {
             Ok(_) => true,
@@ -336,8 +311,7 @@ impl AppSandbox {
         }
     }
 
-    /// Run `herdr-app <arguments>` against the sandbox's app: `do <command> [json]`, `ls`,
-    /// `status`, `commands`. Returns its JSON output, or its text when that is no JSON. No
+    /// Returns the JSON output of `herdr-app <arguments>`, or its text when that is no JSON. No
     /// arguments is refused: it would open a second window.
     pub fn herdr_app<S: AsRef<str>>(&self, arguments: &[S]) -> Result<Value> {
         ensure!(
@@ -347,8 +321,7 @@ impl AppSandbox {
         self.run_json(&self.programs.app, arguments)
     }
 
-    /// Run `hc <arguments>` against the sandbox's core, such as `ls`, `read t1` or `send t1
-    /// 'ls'`. Returns its JSON output, or its text when that is no JSON.
+    /// Returns the JSON output of `hc <arguments>`, or its text when that is no JSON.
     pub fn hc<S: AsRef<str>>(&self, arguments: &[S]) -> Result<Value> {
         self.run_json(&self.programs.hc, arguments)
     }
@@ -390,7 +363,6 @@ impl AppSandbox {
         Ok(stdout.into_owned())
     }
 
-    /// [`run`](Self::run), its output read as JSON, or as text when that is no JSON.
     fn run_json<S: AsRef<str>>(&self, program: &Path, arguments: &[S]) -> Result<Value> {
         let stdout = self.run(program, arguments)?;
         Ok(serde_json::from_str(&stdout).unwrap_or(Value::String(stdout)))
@@ -407,18 +379,14 @@ impl AppSandbox {
         }
     }
 
-    /// The programs the sandbox runs.
     pub fn programs(&self) -> &Programs {
         &self.programs
     }
 
-    /// The environment of the sandbox's processes: its `DISPLAY`, `HERDR_APP_HOME`,
-    /// `HC_SESSION` and XDG directories among them.
     pub fn environment(&self) -> &[(OsString, OsString)] {
         &self.environment
     }
 
-    /// The value of the variable `name` in the environment of the sandbox's processes.
     pub fn variable(&self, name: &str) -> Option<&OsStr> {
         self.environment
             .iter()
@@ -453,7 +421,6 @@ impl AppSandbox {
         self.outside(self.inside())
     }
 
-    /// The path that shows `inside`, a path as the sandbox's processes see it, to this process.
     fn outside(&self, inside: &Path) -> PathBuf {
         match &self.jail {
             Jail::Bubble(bubble) => bubble.outside(inside),
@@ -527,8 +494,6 @@ impl AppSandbox {
     }
 
     fn end(&mut self) -> Result<()> {
-        // No forward enters the sandbox once it ended, when another process may hold the PID
-        // nsenter targets.
         self.forwards
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner)
@@ -557,7 +522,6 @@ impl Drop for AppSandbox {
     }
 }
 
-/// Where the sandbox's processes run.
 enum Jail {
     Bubble(Bubble),
     Plain(Plain),
@@ -572,7 +536,6 @@ impl Jail {
     }
 }
 
-/// `path` opened to append to, created when missing: a log that keeps each run's lines.
 fn append(path: &Path) -> Result<std::fs::File> {
     std::fs::File::options()
         .create(true)
@@ -581,8 +544,6 @@ fn append(path: &Path) -> Result<std::fs::File> {
         .wrap_err_with(|| format!("cannot open {}", path.display()))
 }
 
-/// Copy what a process writes to its standard error to the end of `log`, on another thread, and
-/// send on the returned channel the first line it wrote that contains `ready_line`.
 fn copy_until_ready(
     stderr: ChildStderr,
     log: &Path,
@@ -607,7 +568,6 @@ fn copy_until_ready(
     Ok(said)
 }
 
-/// The version of the herdr-app `app`, as `herdr-app --version` prints it: `0.1.13`.
 fn app_version(app: &Path) -> Result<String> {
     let output = Command::new(app)
         .arg("--version")
@@ -673,7 +633,6 @@ fn write_executable(path: &Path, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// `text` quoted for a POSIX shell.
 fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }

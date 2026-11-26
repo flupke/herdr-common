@@ -1,8 +1,3 @@
-//! `app-sandbox`: an app sandbox that outlives the command that started it, so that an agent
-//! drives it with one shell command after another. `start` leaves a holder process running,
-//! which holds the sandbox and answers the commands that follow on a Unix socket, named after
-//! the sandbox, in the user's runtime directory.
-
 mod holder;
 mod protocol;
 
@@ -146,15 +141,12 @@ fn run(command: Subcommands) -> Result<()> {
     }
 }
 
-/// Start the holder, detached in a process group of its own, and print what it says once the
-/// sandbox runs.
 fn start(name: &str, launch: &Launch) -> Result<()> {
     let socket = socket(name)?;
     ensure!(
         UnixStream::connect(&socket).is_err(),
         "the sandbox {name} runs already: stop it, or start one with another name"
     );
-    // A holder that died left its socket.
     let _ = std::fs::remove_file(&socket);
     let log = socket.with_extension("log");
     let (width, height) = launch.size;
@@ -196,8 +188,6 @@ fn ask(name: &str, request: &Request) -> Result<()> {
     print(&protocol::ask(&socket(name)?, request)?)
 }
 
-/// Print a result: a text as it is, JSON indented. A reader that went away, such as `head`, is
-/// no failure.
 fn print(value: &Value) -> Result<()> {
     let text = match value {
         Value::String(text) if text.is_empty() || text.ends_with('\n') => text.clone(),
@@ -210,8 +200,6 @@ fn print(value: &Value) -> Result<()> {
     }
 }
 
-/// The socket of the sandbox `name`, in a directory only the user reaches: `app-sandbox` in
-/// their runtime directory, or `/tmp/app-sandbox-<uid>` without one.
 fn socket(name: &str) -> Result<PathBuf> {
     ensure!(
         !name.is_empty()
@@ -242,7 +230,6 @@ fn socket(name: &str) -> Result<PathBuf> {
     Ok(directory.join(format!("{name}.sock")))
 }
 
-/// A size such as `1400x900`.
 fn size(text: &str) -> Result<(u16, u16), String> {
     let parse = || {
         let (width, height) = text.split_once('x')?;
