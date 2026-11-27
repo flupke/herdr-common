@@ -46,12 +46,16 @@ Pick a name of your own for the sandbox, such as the mod's: other agents run san
 machine.
 
 ```sh
-$S start <name>                    # prints its directory, inside and display, as JSON
+$S start <name>                    # prints its directory, inside, display and renderer, as JSON
 $S mod <name> <mod directory>      # copies the mod in, prints the copy's path inside
 $S herdr-app <name> check <the path mod printed>
 $S herdr-app <name> do space.new --name vision
 $S herdr-app <name> do tab.new --name test --mod <mod> --props '{...}'
 ```
+
+Should it fail to start on the GPU, start it again with `--rendering software`, which draws on
+the CPU. A shot on the GPU and one in software differ in the edges of the text: compare shots
+taken with the same `renderer`.
 
 `mod` installs the mod under its folder's name, which `--mod` and `<mod>.<command>` take. The
 sandbox is yours: open spaces, tabs and panes, select and focus at will. It has no network:

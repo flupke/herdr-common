@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, ChildStderr, Stdio};
 
-use app_sandbox::{AppSandbox, Isolation, Options, Programs};
+use app_sandbox::{AppSandbox, Isolation, Options, Programs, Renderer, Rendering};
 
 fn shoots_the_pinned_app_then_leaves_nothing_behind(options: &Options, hertz: f64) {
     let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), options).unwrap();
@@ -15,6 +15,27 @@ fn shoots_the_pinned_app_then_leaves_nothing_behind(options: &Options, hertz: f6
     assert!(
         (rate - hertz).abs() < 0.5,
         "the display runs at {rate} Hz, not {hertz}"
+    );
+
+    let render_nodes: BTreeSet<_> = sandbox
+        .processes()
+        .into_iter()
+        .flat_map(|pid| {
+            std::fs::read_dir(format!("/proc/{pid}/fd"))
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|fd| std::fs::read_link(fd.ok()?.path()).ok())
+        .filter(|file| file.starts_with("/dev/dri"))
+        .collect();
+    let gpu = matches!(sandbox.renderer(), Renderer::Gpu { .. });
+    assert!(
+        render_nodes.iter().all(|file| file
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("renderD")))
+            && render_nodes.is_empty() != gpu,
+        "drawing with {}, the sandbox opened {render_nodes:?}",
+        sandbox.renderer()
     );
 
     let png = sandbox.shot().unwrap();
@@ -65,7 +86,7 @@ fn ended(pid: u32) -> bool {
 }
 
 #[test]
-fn in_bubblewrap_at_10_hz() {
+fn in_bubblewrap_at_10_hz_on_the_gpu_when_there_is_one() {
     let options = Options {
         isolation: Isolation::Bubblewrap,
         display_size: (1000, 700),
@@ -76,10 +97,11 @@ fn in_bubblewrap_at_10_hz() {
 }
 
 #[test]
-fn plain_at_the_default_rate() {
+fn plain_at_the_default_rate_in_software() {
     let options = Options {
         isolation: Isolation::Plain,
         display_size: (1000, 700),
+        rendering: Rendering::Software,
         ..Options::default()
     };
     shoots_the_pinned_app_then_leaves_nothing_behind(&options, 60.0);

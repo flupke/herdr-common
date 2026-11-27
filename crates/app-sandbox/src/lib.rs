@@ -1,14 +1,17 @@
 //! A private herdr-app on a headless display, for visual tests that must never fake input on
 //! the user's display nor take their focus: the pinned herdr-app and herdr-core (`hc`), with
-//! their own `HERDR_APP_HOME`, `HC_SESSION` and XDG directories, drawn by Mesa's software
-//! Vulkan on a headless Weston, whose Xwayland is the app's only display. Its processes get
-//! none of the variables that name the user's displays, window manager, Herdr or herdr-app.
+//! their own `HERDR_APP_HOME`, `HC_SESSION` and XDG directories, on a headless Weston, whose
+//! Xwayland is the app's only display. They draw with the machine's GPU through the dev shell's
+//! Mesa when there is one, or on the CPU with Mesa's software renderer ([`Rendering`]). Its
+//! processes get none of the variables that name the user's displays, window manager, Herdr or
+//! herdr-app.
 
 mod bubble;
 mod environment;
 mod forward;
 mod plain;
 mod process;
+mod rendering;
 mod restart;
 
 use std::ffi::{OsStr, OsString};
@@ -28,6 +31,7 @@ pub use environment::user_directories;
 use environment::{Inputs, WAYLAND_SOCKET};
 use forward::Forward;
 use plain::Plain;
+pub use rendering::{Renderer, Rendering};
 pub use restart::Restart;
 
 /// The app's home (`HERDR_APP_HOME`) in the sandbox's directory.
@@ -64,24 +68,39 @@ pub struct Programs {
     pub hc: PathBuf,
     /// Weston (`TEST_WESTON_BIN_PATH`), which starts its Xwayland.
     pub weston: PathBuf,
-    /// Mesa's software Vulkan driver (`TEST_HERDR_APP_VULKAN_DRIVER`): the app draws on the
-    /// CPU, the same on every machine, and never opens the user's GPU.
-    pub vulkan_driver: PathBuf,
+    /// Mesa (`TEST_MESA_PATH`), whose drivers the display and the app draw with: its GPU
+    /// drivers, or its software renderer.
+    pub mesa: PathBuf,
 }
 
 impl Programs {
-    /// The pinned programs the dev shell's variables name.
+    /// The pinned programs the dev shell's variables name. An app's dev shell that sets only
+    /// `TEST_HERDR_APP_VULKAN_DRIVER`, Mesa's software Vulkan driver, names Mesa through it.
     pub fn pinned() -> Result<Self> {
+        Self::from_variables(|name| std::env::var_os(name))
+    }
+
+    fn from_variables(variables: impl Fn(&str) -> Option<OsString>) -> Result<Self> {
         let variable = |name: &str| {
-            std::env::var_os(name)
-                .map(PathBuf::from)
-                .with_context(|| format!("{name} is not set: run in herdr-common's dev shell"))
+            variables(name).map(PathBuf::from).with_context(|| {
+                format!(
+                    "{name} is not set: run in herdr-common's dev shell, or one that sets \
+                         it as herdr-common's flake.nix does"
+                )
+            })
         };
         Ok(Self {
             app: variable("TEST_HERDR_APP_BIN_PATH")?,
             hc: variable("TEST_HC_BIN_PATH")?,
             weston: variable("TEST_WESTON_BIN_PATH")?,
-            vulkan_driver: variable("TEST_HERDR_APP_VULKAN_DRIVER")?,
+            mesa: variable("TEST_MESA_PATH").or_else(|error| {
+                let driver = variable("TEST_HERDR_APP_VULKAN_DRIVER").map_err(|_| error)?;
+                driver
+                    .ancestors()
+                    .nth(4)
+                    .map(Path::to_owned)
+                    .with_context(|| format!("{} is in no Mesa", driver.display()))
+            })?,
         })
     }
 }
@@ -116,13 +135,17 @@ pub struct Options {
     /// The display's size, in pixels, which the app's window fills.
     pub display_size: (u16, u16),
     pub display_refresh_hz: NonZeroU16,
+    /// What the display and the app draw with: by default, the machine's GPU when there is
+    /// one, and software otherwise.
+    pub rendering: Rendering,
     /// Variables added to the environment of every process of the sandbox, the app's
     /// terminals included, over the inherited ones and the sandbox's defaults, such as
     /// `BROWSER=true`, `TERM` and `SHELL`: a `BROWSER` of the caller's runs instead. A path in
     /// it is one as the sandbox's processes see it, under [`AppSandbox::inside`]. What the
     /// isolation stands on stays the sandbox's own: a display or window manager (`DISPLAY`,
     /// `WAYLAND_DISPLAY`, `SWAYSOCK`) is dropped, and `HOME`, `TMPDIR`, the XDG directories,
-    /// `HERDR_APP_HOME`, `HC_SESSION` and the Vulkan driver are the sandbox's; a `PATH` comes
+    /// `HERDR_APP_HOME`, `HC_SESSION` and the graphics drivers are the sandbox's, and a variable
+    /// that picks or tunes them (`VK_*`, `MESA_*`, `LIBGL_*`, `DRI_PRIME`) is dropped; a `PATH` comes
     /// after the sandbox's `bin`, so one that finds a fake agent first still finds the
     /// pinned `hc` before it.
     pub environment: Vec<(OsString, OsString)>,
@@ -134,6 +157,7 @@ impl Default for Options {
             isolation: Isolation::default(),
             display_size: (1400, 900),
             display_refresh_hz: NonZeroU16::new(60).unwrap(),
+            rendering: Rendering::default(),
             environment: Vec::new(),
         }
     }
@@ -148,6 +172,7 @@ pub struct Stopped {
 pub struct AppSandbox {
     jail: Jail,
     programs: Programs,
+    renderer: Renderer,
     environment: Vec<(OsString, OsString)>,
     display: String,
     weston: Option<Child>,
@@ -164,7 +189,7 @@ impl AppSandbox {
             &programs.app,
             &programs.hc,
             &programs.weston,
-            &programs.vulkan_driver,
+            &programs.mesa,
         ] {
             ensure!(
                 path.is_absolute(),
@@ -172,6 +197,8 @@ impl AppSandbox {
                 path.display()
             );
         }
+        let renderer = Renderer::choose(options.rendering, Path::new("/sys"), Path::new("/dev"))?;
+        eprintln!("app sandbox: drawing with {renderer}");
         let jail = match options.isolation {
             Isolation::Bubblewrap => Jail::Bubble(Bubble::start(
                 &user_directories(std::env::vars_os()),
@@ -183,13 +210,15 @@ impl AppSandbox {
             environment: environment::environment(
                 &Inputs {
                     root: jail.inside(),
-                    vulkan_driver: &programs.vulkan_driver,
+                    mesa: &programs.mesa,
+                    renderer: &renderer,
                     added: &options.environment,
                 },
                 std::env::vars_os(),
             ),
             jail,
             programs: programs.clone(),
+            renderer,
             display: String::new(),
             weston: None,
             app: None,
@@ -197,8 +226,10 @@ impl AppSandbox {
             forwards: Mutex::new(Vec::new()),
         };
         sandbox.prepare(options.display_size)?;
-        sandbox.start_display(options.display_size, options.display_refresh_hz)?;
-        sandbox.start_app()?;
+        sandbox
+            .start_display(options.display_size, options.display_refresh_hz)
+            .and_then(|()| sandbox.start_app())
+            .wrap_err_with(|| format!("drawing with {}", sandbox.renderer))?;
         Ok(sandbox)
     }
 
@@ -253,6 +284,7 @@ impl AppSandbox {
                 format!("--refresh-rate={}", u32::from(refresh_hz.get()) * 1000),
                 "--idle-time=0".to_owned(),
             ])
+            .arg(format!("--renderer={}", self.renderer.weston_renderer()))
             .stdin(Stdio::null())
             .stdout(append(&log)?)
             .stderr(Stdio::piped())
@@ -385,6 +417,10 @@ impl AppSandbox {
 
     pub fn programs(&self) -> &Programs {
         &self.programs
+    }
+
+    pub fn renderer(&self) -> &Renderer {
+        &self.renderer
     }
 
     pub fn environment(&self) -> &[(OsString, OsString)] {
@@ -640,3 +676,7 @@ fn write_executable(path: &Path, text: &str) -> Result<()> {
 fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
+
+#[cfg(test)]
+#[path = "lib.tests.rs"]
+mod tests;

@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
+use app_sandbox::Renderer;
 use eyre::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,6 +28,7 @@ pub(crate) struct Info {
     pub(crate) inside: PathBuf,
     pub(crate) app_home: PathBuf,
     pub(crate) log: PathBuf,
+    pub(crate) renderer: Renderer,
 }
 
 pub(crate) fn send(stream: &mut impl Write, message: &impl Serialize) -> Result<()> {

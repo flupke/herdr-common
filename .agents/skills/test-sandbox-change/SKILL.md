@@ -18,7 +18,8 @@ Read the one for the tool your change leans on before you change the code or des
 
 ## The app sandbox (`crates/app-sandbox`)
 
-`make test CRATES=app-sandbox` runs the sandbox in each isolation; `make test CRATES=vision-mcp`
+`make test CRATES=app-sandbox` runs the sandbox in each isolation, in bubblewrap on the machine's
+GPU when it has one and in plain isolation in software; `make test CRATES=vision-mcp`
 restarts its core, reboots it and opens the window again, and drives a probe after each.
 
 A change to what keeps the sandbox off the user's display also needs the **window watch**: list

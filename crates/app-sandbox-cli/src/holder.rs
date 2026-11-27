@@ -72,6 +72,7 @@ fn start(settings: &Settings) -> Result<(Holder, UnixListener)> {
         inside: sandbox.inside().to_owned(),
         app_home: sandbox.directory().join(APP_HOME),
         log: settings.log.clone(),
+        renderer: sandbox.renderer().clone(),
     };
     let holder = Holder {
         sandbox: RwLock::new(Some(sandbox)),

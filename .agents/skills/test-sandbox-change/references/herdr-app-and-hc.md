@@ -83,3 +83,19 @@ code leans on it.
 - The root window of Weston's Xwayland is black (rootless Xwayland): `x11grab` records the app's
   window (`-window_id`, from `xdotool search`), never the display.
 - nixpkgs' `ffmpeg` has no `x11grab`; `ffmpeg-full` does.
+
+## Drawing
+
+Seen on herdr-app 0.1.13, Weston 16 and the dev shell's Mesa 26.2, on an AMD GPU (amdgpu).
+
+- herdr-app draws with Vulkan, and presents on Xwayland through DRI3 with a GPU's driver. On
+  Weston's pixman renderer Xwayland has no DRI3, and the app ends at once: "No GPU adapter found
+  that can configure the display surface". On Weston's GL renderer, Xwayland draws on the GPU
+  too (glamor) and offers DRI3.
+- Weston's GL renderer and Xwayland find Mesa only through `__EGL_VENDOR_LIBRARY_FILENAMES` and
+  `GBM_BACKENDS_PATH`: without them Xwayland does not start. Weston takes the first render node
+  Mesa drives, and skips one of NVIDIA's own driver.
+- `weston.log` names the render node and the GL renderer Weston uses; the app's open files
+  (`/proc/<PID>/fd`) name the render node it draws on.
+- A screenshot of a still window is the same, byte for byte, shot after shot, on the GPU and in
+  software; the two differ from each other in the edges of the text.

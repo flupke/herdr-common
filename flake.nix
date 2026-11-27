@@ -211,9 +211,7 @@
               TEST_HERDR_APP_BIN_PATH = "${herdrAppFor system}/bin/herdr-app";
               TEST_HC_BIN_PATH = "${hcFor system}/bin/hc";
               TEST_WESTON_BIN_PATH = "${pkgs.weston}/bin/weston";
-              # Mesa's software Vulkan driver: the private herdr-app draws on the CPU, the same on
-              # every machine, and never opens the user's GPU.
-              TEST_HERDR_APP_VULKAN_DRIVER = "${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.${pkgs.stdenv.hostPlatform.uname.processor}.json";
+              TEST_MESA_PATH = "${pkgs.mesa}";
             }
           );
         }

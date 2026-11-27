@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use crate::Renderer;
+
 /// The core's session (`HC_SESSION`), which names its socket in the private runtime directory.
 const CORE_SESSION: &str = "sandbox";
 
@@ -12,7 +14,8 @@ pub(crate) const WAYLAND_SOCKET: &str = "wayland-sandbox";
 
 pub(crate) struct Inputs<'a> {
     pub(crate) root: &'a Path,
-    pub(crate) vulkan_driver: &'a Path,
+    pub(crate) mesa: &'a Path,
+    pub(crate) renderer: &'a Renderer,
     pub(crate) added: &'a [(OsString, OsString)],
 }
 
@@ -31,7 +34,7 @@ pub(crate) fn environment(
     ];
     let mut environment: BTreeMap<OsString, OsString> = inherited
         .into_iter()
-        .filter(|(name, _)| !reaches_the_user(name))
+        .filter(|(name, _)| !reaches_the_user(name) && !steers_the_drivers(name))
         .chain(
             defaults
                 .into_iter()
@@ -41,11 +44,12 @@ pub(crate) fn environment(
             inputs
                 .added
                 .iter()
-                .filter(|(name, _)| !names_a_display(name))
+                .filter(|(name, _)| !names_a_display(name) && !steers_the_drivers(name))
                 .cloned(),
         )
         .collect();
     let path = |name: &str| inputs.root.join(name).into_os_string();
+    let vulkan_drivers = inputs.renderer.vulkan_drivers(inputs.mesa);
     let mut search = path("bin");
     if let Some(inherited) = environment.get(OsStr::new("PATH")) {
         search.push(":");
@@ -63,8 +67,19 @@ pub(crate) fn environment(
         // hc's manual asks tests for a session of their own, beside private XDG directories.
         ("HC_SESSION".into(), CORE_SESSION.into()),
         ("TMPDIR".into(), inputs.root.into()),
-        ("VK_DRIVER_FILES".into(), inputs.vulkan_driver.into()),
-        ("VK_ICD_FILENAMES".into(), inputs.vulkan_driver.into()),
+        ("VK_DRIVER_FILES".into(), vulkan_drivers.clone()),
+        ("VK_ICD_FILENAMES".into(), vulkan_drivers),
+        (
+            "__EGL_VENDOR_LIBRARY_FILENAMES".into(),
+            inputs
+                .mesa
+                .join("share/glvnd/egl_vendor.d/50_mesa.json")
+                .into(),
+        ),
+        (
+            "GBM_BACKENDS_PATH".into(),
+            inputs.mesa.join("lib/gbm").into(),
+        ),
     ]);
     environment.into_iter().collect()
 }
@@ -88,6 +103,25 @@ fn reaches_the_user(name: &OsStr) -> bool {
                 | b"TMUX_PANE"
                 | b"PS1"
         )
+}
+
+/// Whether the variable `name` picks or tunes the graphics drivers, such as
+/// `VK_ADD_DRIVER_FILES`, `LIBGL_ALWAYS_SOFTWARE` or `DRI_PRIME`: the sandbox's drivers are its
+/// own.
+fn steers_the_drivers(name: &OsStr) -> bool {
+    let bytes = name.as_encoded_bytes();
+    [
+        &b"VK_"[..],
+        b"MESA_",
+        b"LIBGL_",
+        b"GALLIUM_",
+        b"GBM_",
+        b"__EGL_",
+        b"__GLX_",
+        b"DRI_PRIME",
+    ]
+    .iter()
+    .any(|prefix| bytes.starts_with(prefix))
 }
 
 fn names_a_display(name: &OsStr) -> bool {

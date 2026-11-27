@@ -37,9 +37,11 @@ fn commands_drive_the_sandbox_that_start_left_running() {
         name,
         "--size=1000x700",
         "--refresh-rate=10",
+        "--rendering=software",
     ]))
     .unwrap();
     let _started = Started(name);
+    assert_eq!(info["renderer"], serde_json::json!({"kind": "software"}));
     let directory = Path::new(info["directory"].as_str().unwrap()).to_owned();
     let socket = Path::new(info["display_socket"].as_str().unwrap());
     let rate = vision_display::refresh_hz(socket).unwrap();

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode, Stdio};
 use std::time::Duration;
 
-use app_sandbox::{Isolation, Options};
+use app_sandbox::{Isolation, Options, Rendering};
 use clap::{Args, Parser, Subcommand};
 use eyre::{Context, ContextCompat, Result, bail, ensure};
 use serde_json::Value;
@@ -39,7 +39,7 @@ enum Subcommands {
     /// Print where the sandbox is: its display and the display's socket as you reach it
     /// (`display_socket`), its directory as you reach it (`directory`)
     /// and as its processes see it (`inside`), the app's home (`app_home`, which holds
-    /// `shared.json`), and the holder's log.
+    /// `shared.json`), the holder's log, and what it draws with (`renderer`).
     Info { name: String },
     /// Run `herdr-app <arguments>` against the sandbox's app, such as `do <mod>.<command>`,
     /// `ls`, `status` or `check <mod directory inside>`.
@@ -93,6 +93,11 @@ struct Launch {
     /// draws.
     #[arg(long, default_value_t = Options::default().display_refresh_hz)]
     refresh_rate: NonZeroU16,
+    /// What the display and the app draw with: `gpu`, `software` (on the CPU), or `auto`,
+    /// the machine's GPU when there is one and software otherwise. `start` and `info` print
+    /// what it draws with as `renderer`.
+    #[arg(long, default_value = "auto", value_parser = rendering)]
+    rendering: Rendering,
     /// Stop the sandbox after this many minutes without a command.
     #[arg(long, default_value_t = 60)]
     idle_minutes: u64,
@@ -108,6 +113,7 @@ impl Launch {
             },
             display_size: self.size,
             display_refresh_hz: self.refresh_rate,
+            rendering: self.rendering,
             ..Options::default()
         }
     }
@@ -166,6 +172,7 @@ fn start(name: &str, launch: &Launch) -> Result<()> {
         .arg(&log)
         .arg(format!("--size={width}x{height}"))
         .arg(format!("--refresh-rate={}", launch.refresh_rate))
+        .arg(format!("--rendering={}", rendering_name(launch.rendering)))
         .arg(format!("--idle-minutes={}", launch.idle_minutes))
         .args(launch.plain.then_some("--plain"))
         .process_group(0)
@@ -236,6 +243,27 @@ fn socket(name: &str) -> Result<PathBuf> {
         directory.display()
     );
     Ok(directory.join(format!("{name}.sock")))
+}
+
+const RENDERINGS: [(&str, Rendering); 3] = [
+    ("auto", Rendering::Auto),
+    ("gpu", Rendering::Gpu),
+    ("software", Rendering::Software),
+];
+
+fn rendering(text: &str) -> Result<Rendering, String> {
+    RENDERINGS
+        .iter()
+        .find(|(name, _)| *name == text)
+        .map(|(_, rendering)| *rendering)
+        .ok_or_else(|| format!("a rendering is auto, gpu or software: {text:?}"))
+}
+
+fn rendering_name(rendering: Rendering) -> &'static str {
+    RENDERINGS
+        .iter()
+        .find(|(_, other)| *other == rendering)
+        .map_or("auto", |(name, _)| name)
 }
 
 fn size(text: &str) -> Result<(u16, u16), String> {

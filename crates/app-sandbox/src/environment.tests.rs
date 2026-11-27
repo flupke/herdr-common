@@ -40,6 +40,13 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
         ("TMPDIR", "/tmp/nix-shell.1"),
         ("BROWSER", "firefox"),
         ("TERM", "screen"),
+        (
+            "VK_ADD_DRIVER_FILES",
+            "/usr/share/vulkan/icd.d/nvidia_icd.json",
+        ),
+        ("__EGL_VENDOR_LIBRARY_DIRS", "/usr/share/glvnd/egl_vendor.d"),
+        ("LIBGL_ALWAYS_SOFTWARE", "1"),
+        ("DRI_PRIME", "1"),
     ]);
     let added = variables(&[
         ("PATH", "/sandbox/doubles:/usr/bin"),
@@ -53,11 +60,13 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
         ("XDG_RUNTIME_DIR", "/run/user/1000"),
         ("TMPDIR", "/tmp"),
         ("VK_DRIVER_FILES", "/gpu.json"),
+        ("MESA_VK_DEVICE_SELECT", "10de:2b85"),
     ]);
     let environment = environment(
         &Inputs {
             root: Path::new("/sandbox"),
-            vulkan_driver: Path::new("/mesa/lvp.json"),
+            mesa: Path::new("/mesa"),
+            renderer: &Renderer::Software,
             added: &added,
         },
         inherited,
@@ -66,11 +75,16 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
         .iter()
         .map(|(name, value)| (name.to_str().unwrap(), value.to_str().unwrap()))
         .collect();
+    let lvp = format!(
+        "/mesa/share/vulkan/icd.d/lvp_icd.{}.json",
+        std::env::consts::ARCH
+    );
     assert_eq!(
         environment,
         [
             ("BROWSER", "/sandbox/browser"),
             ("DO_NOT_TRACK", "1"),
+            ("GBM_BACKENDS_PATH", "/mesa/lib/gbm"),
             ("HC_SESSION", "sandbox"),
             ("HERDR_APP_HOME", "/sandbox/config/herdr-app"),
             ("HERDR_APP_NO_SOUND", "1"),
@@ -82,13 +96,17 @@ fn keeps_the_user_s_displays_herdr_and_claude_out_and_lets_the_caller_override_d
             ("SHELL", "/bin/sh"),
             ("TERM", "xterm-256color"),
             ("TMPDIR", "/sandbox"),
-            ("VK_DRIVER_FILES", "/mesa/lvp.json"),
-            ("VK_ICD_FILENAMES", "/mesa/lvp.json"),
+            ("VK_DRIVER_FILES", &lvp),
+            ("VK_ICD_FILENAMES", &lvp),
             ("XDG_CACHE_HOME", "/sandbox/cache"),
             ("XDG_CONFIG_HOME", "/sandbox/config"),
             ("XDG_DATA_HOME", "/sandbox/data"),
             ("XDG_RUNTIME_DIR", "/sandbox/runtime"),
             ("XDG_STATE_HOME", "/sandbox/state"),
+            (
+                "__EGL_VENDOR_LIBRARY_FILENAMES",
+                "/mesa/share/glvnd/egl_vendor.d/50_mesa.json"
+            ),
         ]
     );
 }
