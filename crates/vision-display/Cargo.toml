@@ -9,7 +9,7 @@ description = "The app sandbox's X display, driven as its user would: keys, text
 
 [dependencies]
 eyre = "0.6"
-x11rb = { version = "0.13", features = ["xtest"] }
+x11rb = { version = "0.13", features = ["randr", "xtest"] }
 
 [lints]
 workspace = true

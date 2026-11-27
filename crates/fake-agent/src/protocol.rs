@@ -3,10 +3,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Role {
-    Agent { name: String },
+    Agent {
+        name: String,
+    },
     /// A fork Claude Code runs in print mode (`-p --resume <parent> --fork-session`), which
     /// takes the session `session`.
-    Fork { session: String },
+    Fork {
+        session: String,
+    },
 }
 
 impl Role {
@@ -25,9 +29,13 @@ impl Role {
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
     /// The first line of a connection: who the fake agent is.
-    Hello { role: Role },
+    Hello {
+        role: Role,
+    },
     /// It started with these arguments, and its session started.
-    Started { args: Vec<String> },
+    Started {
+        args: Vec<String>,
+    },
     /// Its session `session` started from `start` (`startup`, `resume`, `clear`, `fork` or
     /// `compact`), in Herdr 0.9, in herdr-app and in a plain terminal alike. The fake agent
     /// reports it once its `SessionStart` hooks ran: the app's, then, in Herdr 0.9, Herdr's
@@ -35,39 +43,64 @@ pub enum Event {
     /// ([`crate::Directory::unreported_resume`]) reports none. A real Claude Code's observing
     /// hook ([`crate::observing_hooks`]) is one of its `SessionStart` hooks, which Claude Code
     /// runs together: it reports the start in no order with the app's hook.
-    SessionStarted { session: String, start: String },
+    SessionStarted {
+        session: String,
+        start: String,
+    },
     /// It reported its session to Herdr as Claude's Herdr integration does, from `start`:
     /// `startup`, `resume`, `clear`, `fork` or `compact`. The fake agent reports it in Herdr
     /// 0.9 alone; a real Claude Code's observing hook, in any terminal.
-    SessionReported { session: String, start: String },
-    StateReported { state: String },
+    SessionReported {
+        session: String,
+        start: String,
+    },
+    StateReported {
+        state: String,
+    },
     /// Herdr released it: Herdr reads its title from now on.
     Released,
     /// It read a prompt submitted in its pane, or the one it started with, as the app's
     /// [`crate::App::read_prompt`] gives it.
-    PromptReceived { text: String },
+    PromptReceived {
+        text: String,
+    },
     /// Its `UserPromptSubmit` hook blocked the prompt `text`: it puts it back in its input
     /// line, as Claude Code does, and does not work on it.
-    PromptBlocked { text: String },
+    PromptBlocked {
+        text: String,
+    },
     /// It read Claude Code's own `/resume <session>`.
-    ResumeReceived { session: String },
+    ResumeReceived {
+        session: String,
+    },
     /// It read the marker `id` ([`crate::Events::mark`]): it read what came in its pane
     /// before.
-    Marker { id: u64 },
+    Marker {
+        id: u64,
+    },
     /// It started a turn, and shows itself working.
     TurnStarted,
     /// It ended its turn: its `Stop` hook printed a block decision with this reason, and it
     /// works on, or it did not, and it is idle.
-    TurnEnded { blocked: Option<String> },
+    TurnEnded {
+        blocked: Option<String>,
+    },
     /// Its input line after the keys of one read of its pane, or of those up to an Enter or a
     /// Ctrl-D in it, which it reports while it suggests a prompt ([`Command::Suggest`]).
-    InputLine { text: String },
+    InputLine {
+        text: String,
+    },
     /// It did what `command` says: its answer to each command, once the command's effects and
     /// their events are done.
-    Obeyed { command: Command },
+    Obeyed {
+        command: Command,
+    },
     /// It exits: `/exit` or Ctrl-D in its pane, or [`Command::Exit`].
     Exited,
-    ForkStarted { parent: String, prompt: String },
+    ForkStarted {
+        parent: String,
+        prompt: String,
+    },
     /// The connection closed: the fake agent's process ended, however it ended. The test's
     /// side reports it; no fake agent writes it.
     Disconnected,

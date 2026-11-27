@@ -1,21 +1,21 @@
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::num::NonZeroU16;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, ChildStderr, Stdio};
 
 use app_sandbox::{AppSandbox, Isolation, Options, Programs};
 
-fn shoots_the_pinned_app_then_leaves_nothing_behind(isolation: Isolation) {
-    let options = Options {
-        isolation,
-        display_size: (1000, 700),
-        ..Options::default()
-    };
-    let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), &options).unwrap();
+fn shoots_the_pinned_app_then_leaves_nothing_behind(options: &Options, hertz: f64) {
+    let sandbox = AppSandbox::start(&Programs::pinned().unwrap(), options).unwrap();
     let directory = sandbox.directory();
-    assert!(sandbox.display_socket().unwrap().exists());
+    let rate = vision_display::refresh_hz(&sandbox.display_socket().unwrap()).unwrap();
+    assert!(
+        (rate - hertz).abs() < 0.5,
+        "the display runs at {rate} Hz, not {hertz}"
+    );
 
     let png = sandbox.shot().unwrap();
     let decoder = png::Decoder::new(std::io::Cursor::new(png));
@@ -65,13 +65,24 @@ fn ended(pid: u32) -> bool {
 }
 
 #[test]
-fn in_bubblewrap() {
-    shoots_the_pinned_app_then_leaves_nothing_behind(Isolation::Bubblewrap);
+fn in_bubblewrap_at_10_hz() {
+    let options = Options {
+        isolation: Isolation::Bubblewrap,
+        display_size: (1000, 700),
+        display_refresh_hz: NonZeroU16::new(10).unwrap(),
+        ..Options::default()
+    };
+    shoots_the_pinned_app_then_leaves_nothing_behind(&options, 10.0);
 }
 
 #[test]
-fn plain() {
-    shoots_the_pinned_app_then_leaves_nothing_behind(Isolation::Plain);
+fn plain_at_the_default_rate() {
+    let options = Options {
+        isolation: Isolation::Plain,
+        display_size: (1000, 700),
+        ..Options::default()
+    };
+    shoots_the_pinned_app_then_leaves_nothing_behind(&options, 60.0);
 }
 
 #[test]

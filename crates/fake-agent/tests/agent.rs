@@ -242,9 +242,10 @@ fn a_turn_s_hooks_carry_the_prompt_id_of_the_prompt_that_started_it() {
     agent.wait_for("the first turn", |event| *event == Event::TurnStarted);
 
     agent.types("Join it.\r");
-    agent.wait_for("the prompt that joins it", |event| {
-        matches!(event, Event::PromptReceived { text } if text == "Join it.")
-    });
+    agent.wait_for(
+        "the prompt that joins it",
+        |event| matches!(event, Event::PromptReceived { text } if text == "Join it."),
+    );
     agent.obey(&Command::PermissionPrompt);
     agent.obey(&Command::EndTurn);
     agent.types("Then this.\r");
@@ -285,7 +286,10 @@ fn a_turn_s_hooks_carry_the_prompt_id_of_the_prompt_that_started_it() {
     assert_eq!(first.len(), 36, "a UUID: {first}");
     assert_eq!(
         &ids[1..],
-        [first, first, first, first, second, second, third, third, third].map(Some)
+        [
+            first, first, first, first, second, second, third, third, third
+        ]
+        .map(Some)
     );
     assert!(first != second && second != third && first != third);
 }

@@ -22,6 +22,7 @@ pub(crate) type Reply = Result<Value, String>;
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Info {
     pub(crate) display: String,
+    pub(crate) display_socket: PathBuf,
     pub(crate) directory: PathBuf,
     pub(crate) inside: PathBuf,
     pub(crate) app_home: PathBuf,

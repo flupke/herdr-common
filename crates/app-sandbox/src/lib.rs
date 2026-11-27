@@ -13,6 +13,7 @@ mod restart;
 
 use std::ffi::{OsStr, OsString};
 use std::io::{BufRead, BufReader, Write};
+use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -114,6 +115,7 @@ pub struct Options {
     pub isolation: Isolation,
     /// The display's size, in pixels, which the app's window fills.
     pub display_size: (u16, u16),
+    pub display_refresh_hz: NonZeroU16,
     /// Variables added to the environment of every process of the sandbox, the app's
     /// terminals included, over the inherited ones and the sandbox's defaults, such as
     /// `BROWSER=true`, `TERM` and `SHELL`: a `BROWSER` of the caller's runs instead. A path in
@@ -131,6 +133,7 @@ impl Default for Options {
         Self {
             isolation: Isolation::default(),
             display_size: (1400, 900),
+            display_refresh_hz: NonZeroU16::new(60).unwrap(),
             environment: Vec::new(),
         }
     }
@@ -194,7 +197,7 @@ impl AppSandbox {
             forwards: Mutex::new(Vec::new()),
         };
         sandbox.prepare(options.display_size)?;
-        sandbox.start_display(options.display_size)?;
+        sandbox.start_display(options.display_size, options.display_refresh_hz)?;
         sandbox.start_app()?;
         Ok(sandbox)
     }
@@ -235,7 +238,7 @@ impl AppSandbox {
         Ok(())
     }
 
-    fn start_display(&mut self, (width, height): (u16, u16)) -> Result<()> {
+    fn start_display(&mut self, (width, height): (u16, u16), refresh_hz: NonZeroU16) -> Result<()> {
         let log = self.directory().join("weston.log");
         let mut weston = self
             .command(&self.programs.weston)
@@ -247,6 +250,7 @@ impl AppSandbox {
                 format!("--socket={WAYLAND_SOCKET}"),
                 format!("--width={width}"),
                 format!("--height={height}"),
+                format!("--refresh-rate={}", u32::from(refresh_hz.get()) * 1000),
                 "--idle-time=0".to_owned(),
             ])
             .stdin(Stdio::null())

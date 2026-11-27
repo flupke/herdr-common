@@ -2,6 +2,7 @@ mod holder;
 mod protocol;
 
 use std::io::{Read, Write};
+use std::num::NonZeroU16;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
@@ -35,7 +36,8 @@ enum Subcommands {
         #[command(flatten)]
         launch: Launch,
     },
-    /// Print where the sandbox is: its display, its directory as you reach it (`directory`)
+    /// Print where the sandbox is: its display and the display's socket as you reach it
+    /// (`display_socket`), its directory as you reach it (`directory`)
     /// and as its processes see it (`inside`), the app's home (`app_home`, which holds
     /// `shared.json`), and the holder's log.
     Info { name: String },
@@ -87,6 +89,10 @@ struct Launch {
     /// The display's size, which the app's window fills.
     #[arg(long, default_value = "1400x900", value_parser = size)]
     size: (u16, u16),
+    /// The display's refresh rate, in hertz: at most how many frames a second the app's window
+    /// draws.
+    #[arg(long, default_value_t = Options::default().display_refresh_hz)]
+    refresh_rate: NonZeroU16,
     /// Stop the sandbox after this many minutes without a command.
     #[arg(long, default_value_t = 60)]
     idle_minutes: u64,
@@ -101,6 +107,7 @@ impl Launch {
                 Isolation::Bubblewrap
             },
             display_size: self.size,
+            display_refresh_hz: self.refresh_rate,
             ..Options::default()
         }
     }
@@ -158,6 +165,7 @@ fn start(name: &str, launch: &Launch) -> Result<()> {
         .arg("--log")
         .arg(&log)
         .arg(format!("--size={width}x{height}"))
+        .arg(format!("--refresh-rate={}", launch.refresh_rate))
         .arg(format!("--idle-minutes={}", launch.idle_minutes))
         .args(launch.plain.then_some("--plain"))
         .process_group(0)

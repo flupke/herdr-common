@@ -67,6 +67,7 @@ fn start(settings: &Settings) -> Result<(Holder, UnixListener)> {
         .wrap_err_with(|| format!("cannot listen on {}", settings.socket.display()))?;
     let info = Info {
         display: sandbox.display().to_owned(),
+        display_socket: sandbox.display_socket()?,
         directory: sandbox.directory(),
         inside: sandbox.inside().to_owned(),
         app_home: sandbox.directory().join(APP_HOME),

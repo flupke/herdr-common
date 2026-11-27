@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use eyre::{Context, ContextCompat, Result, ensure};
 use x11rb::connection::Connection;
+use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::{
     AtomEnum, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, ImageFormat,
     KEY_PRESS_EVENT, KEY_RELEASE_EVENT, MOTION_NOTIFY_EVENT, MapState, Window,
@@ -318,6 +319,33 @@ impl Display {
             .xtest_fake_input(kind, detail, 0, x11rb::NONE, 0, 0, 0)?;
         Ok(())
     }
+}
+
+/// The refresh rate of the current mode of the X display at `socket`, in hertz, as the X
+/// server reports it: Xwayland, from the Wayland output it shows.
+pub fn refresh_hz(socket: &Path) -> Result<f64> {
+    let connection = open(socket)?;
+    let root = connection.setup().roots[0].root;
+    let resources = connection
+        .randr_get_screen_resources_current(root)?
+        .reply()?;
+    let mut current = None;
+    for crtc in &resources.crtcs {
+        let info = connection
+            .randr_get_crtc_info(*crtc, resources.config_timestamp)?
+            .reply()?;
+        if info.mode != 0 {
+            current = Some(info.mode);
+            break;
+        }
+    }
+    let current = current.context("the display shows no mode")?;
+    let mode = resources
+        .modes
+        .iter()
+        .find(|mode| mode.id == current)
+        .context("the display's mode is not among its modes")?;
+    Ok(f64::from(mode.dot_clock) / (f64::from(mode.htotal) * f64::from(mode.vtotal)))
 }
 
 fn open(socket: &Path) -> Result<RustConnection> {

@@ -32,9 +32,18 @@ impl Drop for Started<'_> {
 fn commands_drive_the_sandbox_that_start_left_running() {
     let name = format!("test-{}", std::process::id());
     let name = name.as_str();
-    let info: Value = serde_json::from_str(&succeed(&["start", name, "--size=1000x700"])).unwrap();
+    let info: Value = serde_json::from_str(&succeed(&[
+        "start",
+        name,
+        "--size=1000x700",
+        "--refresh-rate=10",
+    ]))
+    .unwrap();
     let _started = Started(name);
     let directory = Path::new(info["directory"].as_str().unwrap()).to_owned();
+    let socket = Path::new(info["display_socket"].as_str().unwrap());
+    let rate = vision_display::refresh_hz(socket).unwrap();
+    assert!((rate - 10.0).abs() < 0.5, "the display runs at {rate} Hz");
 
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/probe");
     let installed = succeed(&["mod", name, fixture.to_str().unwrap()]);

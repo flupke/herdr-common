@@ -16,6 +16,7 @@ tempfile = "3"
 
 [dev-dependencies]
 png = "0.18"
+vision-display = { path = "../vision-display" }
 
 [lints]
 workspace = true
