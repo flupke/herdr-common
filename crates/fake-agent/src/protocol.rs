@@ -86,6 +86,8 @@ pub enum Command {
     HoldTurns { hold: bool },
     /// The turn ends on an API error: the `StopFailure` hook, then idle.
     StopFailure { error: String },
+    /// The user interrupts the turn, as Esc does in Claude Code: no `Stop` hook, then idle.
+    Interrupt,
     /// Ask the user for a permission: the `Notification` hook of a permission prompt, and
     /// Claude Code's form on its screen.
     PermissionPrompt,

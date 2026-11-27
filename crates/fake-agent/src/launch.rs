@@ -43,7 +43,7 @@ pub(crate) fn session(args: &[String], variable: Option<String>) -> (Option<Stri
     let session = match (named, variable) {
         (Some(session), _) => Some(session),
         (None, Some(variable)) => (!variable.is_empty()).then_some(variable),
-        (None, None) => Some(new_session_id()),
+        (None, None) => Some(new_uuid()),
     };
     (session, start)
 }
@@ -66,8 +66,9 @@ pub(crate) fn first_prompt(args: &[String]) -> Option<&str> {
     }
 }
 
-/// A new random session ID, as Claude Code picks one when it is given none: a version 4 UUID.
-pub(crate) fn new_session_id() -> String {
+/// A new version 4 UUID, as Claude Code picks for a session it is given no ID for, and for
+/// each prompt that starts a turn.
+pub(crate) fn new_uuid() -> String {
     use std::fmt::Write as _;
     use std::io::Read as _;
     let mut bytes = [0u8; 16];

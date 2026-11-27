@@ -157,6 +157,13 @@ fn summary(payloads: &[serde_json::Value]) -> Vec<String> {
         .collect()
 }
 
+fn prompt_ids(payloads: &[serde_json::Value]) -> Vec<Option<&str>> {
+    payloads
+        .iter()
+        .map(|payload| payload.get("prompt_id").map(|id| id.as_str().unwrap()))
+        .collect()
+}
+
 #[test]
 fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
     let mut agent = Started::new(
@@ -224,6 +231,63 @@ fn the_test_ends_each_turn_with_the_stop_hook_which_may_block_it() {
     assert_eq!(transcript[2]["attachment"]["prompt"], "And this.");
     let screen = std::fs::read_to_string(agent.path("screen")).unwrap();
     assert_eq!(states(&screen), ["idle", "working", "idle", "clear"]);
+}
+
+#[test]
+fn a_turn_s_hooks_carry_the_prompt_id_of_the_prompt_that_started_it() {
+    let mut agent = Started::new(
+        &["--session-id", SESSION, "--", "Start."],
+        &[("HC_TERMINAL_ID", Path::new("t1"))],
+    );
+    agent.wait_for("the first turn", |event| *event == Event::TurnStarted);
+
+    agent.types("Join it.\r");
+    agent.wait_for("the prompt that joins it", |event| {
+        matches!(event, Event::PromptReceived { text } if text == "Join it.")
+    });
+    agent.obey(&Command::PermissionPrompt);
+    agent.obey(&Command::EndTurn);
+    agent.types("Then this.\r");
+    agent.wait_for("the second turn", |event| *event == Event::TurnStarted);
+    agent.answers(
+        "Stop",
+        &serde_json::json!({"decision": "block", "reason": "Go on."}),
+    );
+    agent.obey(&Command::EndTurn);
+    agent.obey(&Command::Interrupt);
+    agent.types("After the interrupt.\r");
+    agent.wait_for("the third turn", |event| *event == Event::TurnStarted);
+    agent.obey(&Command::EndTurn);
+    agent.obey(&Command::Exit);
+
+    assert!(agent.process.wait().unwrap().success());
+    let hooks = agent.hooks();
+    assert_eq!(
+        summary(&hooks),
+        [
+            r#"SessionStart "startup""#,
+            r#"UserPromptSubmit "Start.""#,
+            r#"UserPromptSubmit "Join it.""#,
+            "Notification ",
+            "Stop false",
+            r#"UserPromptSubmit "Then this.""#,
+            "Stop false",
+            r#"UserPromptSubmit "After the interrupt.""#,
+            "Stop false",
+            r#"SessionEnd "prompt_input_exit""#,
+        ]
+    );
+    let ids = prompt_ids(&hooks);
+    assert_eq!(ids[0], None, "no line typed yet");
+    let first = ids[1].unwrap();
+    let second = ids[5].unwrap();
+    let third = ids[7].unwrap();
+    assert_eq!(first.len(), 36, "a UUID: {first}");
+    assert_eq!(
+        &ids[1..],
+        [first, first, first, first, second, second, third, third, third].map(Some)
+    );
+    assert!(first != second && second != third && first != third);
 }
 
 #[test]
@@ -311,6 +375,13 @@ fn claude_code_s_own_commands_start_sessions_and_run_no_prompt_hook() {
             r#"SessionEnd "prompt_input_exit""#,
         ]
     );
+    let ids = prompt_ids(&hooks);
+    assert!(ids[1].is_some(), "the typed /clear has its own prompt_id");
+    assert_eq!(
+        [ids[2], ids[3], ids[4], ids[5]],
+        [None; 4],
+        "a new session has none until its first line"
+    );
     let cleared = hooks[2]["session_id"].as_str().unwrap();
     let forked = hooks[3]["session_id"].as_str().unwrap();
     assert_ne!(cleared, SESSION);
@@ -390,6 +461,12 @@ fn a_typed_compact_goes_on_in_its_session_and_runs_no_prompt() {
         ]
     );
     assert!(hooks.iter().all(|payload| payload["session_id"] == SESSION));
+    let ids = prompt_ids(&hooks);
+    assert!(
+        ids[1].is_some() && ids[2].is_some() && ids[1] != ids[2],
+        "each typed /compact has its own prompt_id: {ids:?}"
+    );
+    assert_eq!(ids[3], ids[2]);
     assert_eq!(
         session_starts(&agent),
         [

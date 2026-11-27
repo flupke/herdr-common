@@ -92,6 +92,9 @@ struct Agent<'a> {
     start: Start,
     screen: Screen,
     turns: Turns,
+    /// The `prompt_id` of Claude Code 2.1.332's hooks: a new session has none until its first
+    /// typed line.
+    prompt_id: Option<String>,
     /// Whether its last stop was blocked: Claude Code then says so in the next one.
     blocked: bool,
     background: Vec<String>,
@@ -132,6 +135,7 @@ impl<'a> Agent<'a> {
             start: Start::Startup,
             screen: Screen::new(plays, report, session_name),
             turns: Turns::new(held, herdr.is_some() && !reports_state),
+            prompt_id: None,
             herdr,
             reports_state,
             blocked: false,
@@ -173,6 +177,7 @@ impl<'a> Agent<'a> {
         self.hooks.run(
             self.session.as_deref(),
             self.transcript_path().as_deref(),
+            self.prompt_id.as_deref(),
             event,
             fields,
         )
@@ -182,6 +187,9 @@ impl<'a> Agent<'a> {
         self.transcript.start(&session);
         self.session = Some(session.clone());
         self.start = start;
+        if start != Start::Compact {
+            self.prompt_id = None;
+        }
         let printed = self.hook("SessionStart", &json!({"source": start.as_str()}));
         self.show(&printed);
         self.report_session();
@@ -265,16 +273,22 @@ impl<'a> Agent<'a> {
             self.report(&Event::Marker { id });
             return Next::GoOn;
         }
-        match text.trim() {
-            // Claude Code runs its own commands: no prompt, no `UserPromptSubmit`.
+        let typed = text.trim();
+        let own_command = [EXIT, CLEAR, FORK].contains(&typed)
+            || is_command(typed, COMPACT)
+            || typed.starts_with(RESUME);
+        if !own_command {
+            self.prompt(text);
+            return Next::GoOn;
+        }
+        // Claude Code runs its own commands: no prompt, no `UserPromptSubmit`.
+        self.prompt_id = Some(launch::new_uuid());
+        match typed {
             EXIT => return self.exit(),
             CLEAR => self.clear(),
             FORK => self.fork(),
-            command if is_command(command, COMPACT) => self.compact(),
-            command if command.starts_with(RESUME) => {
-                self.resume(command[RESUME.len()..].trim());
-            }
-            _ => self.prompt(text),
+            _ if is_command(typed, COMPACT) => self.compact(),
+            _ => self.resume(typed[RESUME.len()..].trim()),
         }
         Next::GoOn
     }
@@ -282,10 +296,15 @@ impl<'a> Agent<'a> {
     /// A prompt: it runs the `UserPromptSubmit` hook, which may block it, as Claude Code
     /// erases a blocked prompt from its session; otherwise it writes it in its transcript, reads it, and
     /// works on it unless the test has it swallow it. A prompt that comes while it works joins
-    /// its turn, as Claude Code's does after a tool call.
+    /// its turn, as Claude Code's does after a tool call, and keeps its `prompt_id`; any other
+    /// gets a new one.
     fn prompt(&mut self, text: &str) {
         if text.trim().is_empty() {
             return;
+        }
+        if !self.turns.under_way() {
+            self.prompt_id = Some(launch::new_uuid());
+            self.blocked = false;
         }
         let printed = self.hook("UserPromptSubmit", &json!({"prompt": text}));
         self.show(&printed);
@@ -343,7 +362,7 @@ impl<'a> Agent<'a> {
     /// `/clear`: the session ends, and a new one starts in the same process.
     fn clear(&mut self) {
         self.hook("SessionEnd", &json!({"reason": "clear"}));
-        self.session_starts(launch::new_session_id(), Start::Clear);
+        self.session_starts(launch::new_uuid(), Start::Clear);
         self.screen
             .log(format!("cleared: session {}", self.session()));
         self.turns.end();
@@ -354,7 +373,7 @@ impl<'a> Agent<'a> {
     /// background daemon runs, in a process whose environment names the pane still. The old
     /// session's transcript names the new one. The pane shows the new session.
     fn fork(&mut self) {
-        let fork = launch::new_session_id();
+        let fork = launch::new_uuid();
         if let Some(old) = &self.session {
             self.transcript.continued_in(old, &fork);
         }
@@ -399,6 +418,7 @@ impl<'a> Agent<'a> {
             self.transcript.start(session);
             self.session = Some(session.to_owned());
             self.start = Start::Resume;
+            self.prompt_id = None;
         }
     }
 
@@ -451,6 +471,11 @@ impl<'a> Agent<'a> {
                     &json!({"error": error, "error_details": null}),
                 );
                 self.screen.log(format!("turn failed: {error}"));
+                self.turns.end();
+                self.screen.idle();
+            }
+            Command::Interrupt => {
+                self.screen.log("interrupted");
                 self.turns.end();
                 self.screen.idle();
             }

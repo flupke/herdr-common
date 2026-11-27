@@ -21,6 +21,7 @@ impl Hooks {
         &self,
         session: Option<&str>,
         transcript: Option<&Path>,
+        prompt_id: Option<&str>,
         event: &str,
         fields: &Value,
     ) -> Printed {
@@ -34,6 +35,9 @@ impl Hooks {
             "permission_mode": "default",
             "hook_event_name": event,
         });
+        if let Some(prompt_id) = prompt_id {
+            payload["prompt_id"] = prompt_id.into();
+        }
         for (key, value) in fields.as_object().into_iter().flatten() {
             payload[key] = value.clone();
         }

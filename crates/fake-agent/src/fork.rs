@@ -13,7 +13,7 @@ use crate::{App, Directory, transcript, variables};
 const USAGE: &str = r#"{"input_tokens":3,"cache_creation_input_tokens":20,"cache_read_input_tokens":1000,"output_tokens":7}"#;
 
 pub(crate) fn run(app: &App, args: &[String]) {
-    let session = flag_value(args, "--session-id").unwrap_or_else(launch::new_session_id);
+    let session = flag_value(args, "--session-id").unwrap_or_else(launch::new_uuid);
     let parent = flag_value(args, "--resume").expect("a fork resumes its parent's session");
     let directory = Directory::from_env();
     let (sender, commands) = mpsc::channel();
